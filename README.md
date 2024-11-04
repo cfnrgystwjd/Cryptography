@@ -41,7 +41,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         - 기본 제공되는 함수
         
         ```c
-        void rsa_generate_key(void *e, void *d, void *n, int mode)
+        void rsa_generate_key(void *e, void *d, void *n, int mode);
         ```
         
     2. rsa_cipher: $m$ ← $m^k$ mod $n$ 계산하는 함수
@@ -49,7 +49,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         - 기본 제공되는 함수
         
         ```c
-        static int rsa-cipher(void *m, const void *k, const void *n)
+        static int rsa-cipher(void *m, const void *k, const void *n);
         ```
         
     3. sha224, sha256, sha384, sha512, sha512_224, sha512_256: 길이가 len 바이트인 메시지 m의 SHA-2 hash 값을 digest에 저장하는 함수.
@@ -71,8 +71,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
         ```c
-        int rsaes_oaep_encrypt(const void *m, size_t len, const void *label,
-        												const void *e, const void *n, void *c, int sha2_ndx)
+        int rsaes_oaep_encrypt(const void *m, size_t len, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
         ```
         
     5. rsaes_oaep_decrypt: 암호문 c를 개인키(d, n)을 사용하여 원본 메시지 m과 길이 len을 회복하는 함수.
@@ -80,8 +79,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
         ```c
-        int rsaes_oaep_decrypt(void *m, size_t *len, const void *label,
-        											const void *d, const void *n, const void *c, int sha2_ndx)
+        int rsaes_oaep_decrypt(void *m, size_t *len, const void *label, const void *d, const void *n, const void *c, int sha2_ndx)
         ```
         
     6. rsassa_pss_sign: 길이가 len 바이트인 메시지 m을 개인키 (d, n)으로 서명한 결과를 s에 저장하는 함수
@@ -89,16 +87,14 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
         ```c
-        int rsassa_pss_sign(const void *m, size_t len, const void *d, const void *n,
-        										void *s)
+        int rsassa_pss_sign(const void *m, size_t len, const void *d, const void *n, void *s)
         ```
         
     7. rsassa_psss_verify: 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 (e, n)으로 검증하는 함수
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
         ```c
-        int rsassa_pss_verify(const void *m, size_t len, const void *e,
-        											const void *n, const void *s)
+        int rsassa_pss_verify(const void *m, size_t len, const void *e, const void *n, const void *s)
         ```
         
 ## 과제에서 사용될 오류 코드
