@@ -86,7 +86,7 @@ void rsa_generate_key(void *_e, void *_d, void *_n, int mode)
      */
     mpz_clears(p, q, p_1, q_1, lambda, e, d, n, gcd, NULL);
 }
-}
+
 
 /*
  * rsa_cipher() - compute m^k mod n
@@ -124,6 +124,113 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
     mpz_clears(m, k, n, NULL);
     return 0;
 }
+
+/*
+ *  음수가 아닌 정수를 지정된 길이의 옥텟 문자열로 반환한다.
+ * x: 변환할 정수, xLen: 결과로 나올 길이, X: x를 xLen 길이로 변환한 옥텟 문자열
+ */
+void i2osp(int x, int xLen, unsigned char *X)
+{
+    // x값이 xLen 길이 표현 최대 가능값 초과시 종료
+    if(x >= (1U << (8 * xLen)))
+        return;
+    
+    // x 역순으로 1바이트씩 X에 저장
+    for(int i=xLen-1; i>=0; i--){
+        X[i] = x & 0xFF; // 하위 8비트 X에 저장
+        x >>= 8; // 다음 8비트를 위해 오른쪽으로 쉬프트
+    }
+}
+
+/*
+ * sha2 함수를 정해서 해당 sha 함수를 호출한다.
+ * message: 해시할 메시지, len: 메시지 길이, digest: 해시 결과 저장될 배열, sha2_ndx: 해시 함수
+ */
+int choose_sha2(const unsigned char *message, unsigned int len, unsigned char *digest, int sha2_ndx)
+{
+    switch(sha2_ndx){
+        case SHA224:
+            sha224(message, len, digest);
+            break;
+        case SHA256:
+            sha256(message, len, digest);
+            break;
+        case SHA384:
+            sha384(message, len, digest);
+            break;
+        case SHA512:
+            sha512(message, len, digest);
+            break;
+        case SHA512_224:
+            sha512_224(message, len, digest);
+            break;
+        case SHA512_256:
+            sha512_256(message, len, digest);
+            break;
+        default:
+            return -1;
+    }
+    return 0;
+}
+
+/*
+ * mgf1 - 해시 함수에 기반한 마스크 생성 함수
+ * mgfS: Seed 값, sLen: Seed 길이, m: mLen 길이의 옥텟 문자열 형태의 마스크, mLen: 마스크의 길이, sha2_ndx: 해시 함수
+ * mgfS를 받아서 mLen 길이의 m으로 return한다.
+ */
+unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, size_t mLen, int sha2_ndx)
+{
+    size_t hLen; // 해시 함수 출력 길이
+
+    // 해시 값에 따른 해시 길이 설정
+    switch(sha2_ndx){
+        case SHA224: 
+            hLen = SHA224_DIGEST_SIZE;
+            break;
+        case SHA256:
+            hLen = SHA256_DIGEST_SIZE;
+            break;
+        case SHA384:
+            hLen = SHA384_DIGEST_SIZE;
+            break;
+        case SHA512:
+            hLen = SHA512_DIGEST_SIZE;
+            break;
+        case SHA512_224:
+            hLen = SHA224_DIGEST_SIZE;
+            break;
+        case SHA512_256:
+            hLen = SHA256_DIGEST_SIZE;
+            break;
+        default:
+            return NULL;
+    }
+
+    // 최대 마스크 길이 확인
+    if(mLen > (0xFFFFFFFF * hLen))
+        return NULL;
+
+    // 해시 계산 횟수 -> count = ceil(mLen / hLen)
+    uint32_t count = (mLen + hLen -1) / hLen; 
+    
+    // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
+    unsigned char mgfTemp[sLen + 4];
+    unsigned char temp[count * hLen];
+    
+    // mgfS를 mfgTemp에 복사
+    memcpy(mgfTemp, mgfS, sLen);
+
+    // 마스크 생성 루프
+    for(uint32_t i=0; i<count; i++){
+        i2osp(i, 4, mgfTemp + sLen); // i를 4바이트로 변환하여 mgfTemp 끝에 추가
+        choose_sha2(mgfTemp, sLen + 4, temp + hLen * i, sha2_ndx); // 함수로 해시 값 생성하고 temp에 저장
+    }
+
+    // temp 배열의 앞에서 mLen 만큼 복사해서 마스크 값 생성
+    memcpy(m, temp, mLen);
+    return m;
+}
+
 
 /*
  * rsaes_oaep_encrypt() - RSA encrytion with the EME-OAEP encoding method
