@@ -28,7 +28,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
     - EM의 가장 왼쪽 비트(MSB, Most Significant Bit)가 1이면 강제로 0으로 바꿈
 
 ## 과제 진행 전제
-    - 64비트보다 큰 범위에서의 계산이 이루어지므로 GMP 라이브러리 설치 필요.
+    64비트보다 큰 범위에서의 계산이 이루어지므로 GMP 라이브러리 설치 필요.
     
     ```bash
     sudo apt update
@@ -36,7 +36,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
     ```
     
 ## 과제 함수 프로토타입
-    - rsa_generate_key: 길이가 RSAKEYSIZE(2048)인 e, d, n 생성하는 함수
+    1. rsa_generate_key: 길이가 RSAKEYSIZE(2048)인 e, d, n 생성하는 함수
         - mode가 0이면 표준 모드로, e = 65537, 0이 아니면 무작위로 선택.
         - 기본 제공되는 함수
         
@@ -44,7 +44,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         void rsa_generate_key(void *e, void *d, void *n, int mode)
         ```
         
-    - rsa_cipher: $m$ ← $m^k$ mod $n$ 계산하는 함수
+    2. rsa_cipher: $m$ ← $m^k$ mod $n$ 계산하는 함수
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         - 기본 제공되는 함수
         
@@ -52,7 +52,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         static int rsa-cipher(void *m, const void *k, const void *n)
         ```
         
-    - sha224, sha256, sha384, sha512, sha512_224, sha512_256: 길이가 len 바이트인 메시지 m의 SHA-2 hash 값을 digest에 저장하는 함수.
+    3. sha224, sha256, sha384, sha512, sha512_224, sha512_256: 길이가 len 바이트인 메시지 m의 SHA-2 hash 값을 digest에 저장하는 함수.
         - 기본 제공되는 함수
         
         ```c
@@ -64,7 +64,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         void sha512_256(const unsigned char *m, unsigned int len, unsigned char *digest);
         ```
         
-    - rsaes_oaep_encrypt: 길이가 len 바이트인 메시지 m을 공개키 (e, n)으로 암호화한 결과를 c에 저장하는 함수
+    4. rsaes_oaep_encrypt: 길이가 len 바이트인 메시지 m을 공개키 (e, n)으로 암호화한 결과를 c에 저장하는 함수
         - label: 데이터를 식별하기 위한 라벨 문자열. NULL 허용.
         - sha2_ndx는 사용할 SHA-2 해시함수의 색인값. SHA(224, 256, 384, 512, 512_224, 512_256) 중 선택.
         - c의 크기 = RSA의 키의 길이(RSAKEYSIZE) = 2048bit
@@ -75,7 +75,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         												const void *e, const void *n, void *c, int sha2_ndx)
         ```
         
-    - rsaes_oaep_decrypt: 암호문 c를 개인키(d, n)을 사용하여 원본 메시지 m과 길이 len을 회복하는 함수.
+    5. rsaes_oaep_decrypt: 암호문 c를 개인키(d, n)을 사용하여 원본 메시지 m과 길이 len을 회복하는 함수.
         - label과 sha2_ndx는 암호화할 때 사용한 것과 일치해야 함.
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
@@ -84,7 +84,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         											const void *d, const void *n, const void *c, int sha2_ndx)
         ```
         
-    - rsassa_pss_sign: 길이가 len 바이트인 메시지 m을 개인키 (d, n)으로 서명한 결과를 s에 저장하는 함수
+    6. rsassa_pss_sign: 길이가 len 바이트인 메시지 m을 개인키 (d, n)으로 서명한 결과를 s에 저장하는 함수
         - s의 크기 = RSAKEYSIZE = 2048bit
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
@@ -93,7 +93,7 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
         										void *s)
         ```
         
-    - rsassa_psss_verify: 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 (e, n)으로 검증하는 함수
+    7. rsassa_psss_verify: 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 (e, n)으로 검증하는 함수
         - 성공하면 0, 그렇지 않으면 오류 코드 return
         
         ```c
