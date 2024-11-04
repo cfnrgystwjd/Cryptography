@@ -37,15 +37,16 @@ sudo apt install libgmp-dev
 ```
 
 ## 과제 함수 프로토타입
-1. **rsa_generate_key**: 길이가 RSAKEYSIZE(2048)인 \( e, d, n \) 생성하는 함수
-   - mode가 0이면 표준 모드로, \( e = 65537 \), 0이 아니면 무작위로 선택.
+1. **rsa_generate_key**: 길이가 RSAKEYSIZE(2048)인 e, d, n 생성하는 함수
+   - mode가 0이면 표준 모드로, e = 65537
+   - mode가 0이 아니면 무작위로 선택.
    - 기본 제공되는 함수
    
    ```c
    void rsa_generate_key(void *e, void *d, void *n, int mode);
    ```
 
-2. **rsa_cipher**: \( m \leftarrow m^k \mod n \) 계산하는 함수
+2. **rsa_cipher**: m ← m^k mod n  계산하는 함수
    - 성공하면 0, 그렇지 않으면 오류 코드 반환
    - 기본 제공되는 함수
    
@@ -65,7 +66,7 @@ sudo apt install libgmp-dev
    void sha512_256(const unsigned char *m, unsigned int len, unsigned char *digest);
    ```
 
-4. **rsaes_oaep_encrypt**: 길이가 len 바이트인 메시지 m을 공개키 \( (e, n) \)으로 암호화한 결과를 c에 저장하는 함수
+4. **rsaes_oaep_encrypt**: 길이가 len 바이트인 메시지 m을 공개키 (e, n)으로 암호화한 결과를 c에 저장하는 함수
    - label: 데이터를 식별하기 위한 라벨 문자열. NULL 허용.
    - sha2_ndx는 사용할 SHA-2 해시함수의 색인값. SHA(224, 256, 384, 512, 512_224, 512_256) 중 선택.
    - c의 크기 = RSA의 키의 길이(RSAKEYSIZE) = 2048bit
@@ -75,7 +76,7 @@ sudo apt install libgmp-dev
    int rsaes_oaep_encrypt(const void *m, size_t len, const void *label, const void *e, const void *n, void *c, int sha2_ndx);
    ```
 
-5. **rsaes_oaep_decrypt**: 암호문 c를 개인키 \( (d, n) \)을 사용하여 원본 메시지 m과 길이 len을 회복하는 함수
+5. **rsaes_oaep_decrypt**: 암호문 c를 개인키 (d, n)을 사용하여 원본 메시지 m과 길이 len을 회복하는 함수
    - label과 sha2_ndx는 암호화할 때 사용한 것과 일치해야 함.
    - 성공하면 0, 그렇지 않으면 오류 코드 반환
    
@@ -83,7 +84,7 @@ sudo apt install libgmp-dev
    int rsaes_oaep_decrypt(void *m, size_t *len, const void *label, const void *d, const void *n, const void *c, int sha2_ndx);
    ```
 
-6. **rsassa_pss_sign**: 길이가 len 바이트인 메시지 m을 개인키 \( (d, n) \)으로 서명한 결과를 s에 저장하는 함수
+6. **rsassa_pss_sign**: 길이가 len 바이트인 메시지 m을 개인키 (d, n)으로 서명한 결과를 s에 저장하는 함수
    - s의 크기 = RSAKEYSIZE = 2048bit
    - 성공하면 0, 그렇지 않으면 오류 코드 반환
    
@@ -91,7 +92,7 @@ sudo apt install libgmp-dev
    int rsassa_pss_sign(const void *m, size_t len, const void *d, const void *n, void *s);
    ```
 
-7. **rsassa_pss_verify**: 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 \( (e, n) \)으로 검증하는 함수
+7. **rsassa_pss_verify**: 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 (e, n)으로 검증하는 함수
    - 성공하면 0, 그렇지 않으면 오류 코드 반환
    
    ```c
@@ -99,7 +100,7 @@ sudo apt install libgmp-dev
    ```
 
 ## 과제에서 사용될 오류 코드
-- **PKCS_MSG_OUT_OF_RANGE**: RSA 데이터 값 ≥ modulus \( n \)
+- **PKCS_MSG_OUT_OF_RANGE**: RSA 데이터 값 ≥ modulus n
 - **PKCS_MSG_TOO_LONG**: 입력 메시지가 너무 길어 한도 초과
 - **PKCS_LABEL_TOO_LONG**: label의 길이가 너무 길어 한도 초과 (RSAES-OAEP)
 - **PKCS_INITIAL_NONZERO**: EM의 첫 번째 바이트가 0이 아님. (RSAES-OAEP)
