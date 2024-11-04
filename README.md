@@ -12,19 +12,19 @@ IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
     - 확률적 전자서명 알고리즘 (Signature Scheme with Appendix based on the Probabilistic Signature Scheme)
 
 ## 과제 구현
-1. **RSAES-OAEP**: 암호화할 메시지 \( M \)을 \( EM \)으로 변환한 후, 공개키 \( (e, n) \)을 사용하여 \( EM^e \mod n \) 계산
+1. **RSAES-OAEP**: 암호화할 메시지 M을 EM으로 변환한 후, 공개키 (e, n)을 사용하여 $$EM^e mod n$$ 계산
    - Data Block은 Hash(Label) + 00 + 01 + Message로 구성됨.
    - Hash function: 길이가 최소 224비트인 SHA-2 계열의 함수 사용
    - 난수 Seed의 길이 = Hash function의 길이
    - EM의 길이 = RSA의 길이 = 2048bit
-2. **RSASSA-PSS**: 서명할 메시지 \( M \)을 \( EM \)으로 변환한 후, 개인키 \( (d, n) \)을 사용하여 \( EM^d \mod n \) 계산
+2. **RSASSA-PSS**: 서명할 메시지 M을 EM으로 변환한 후, 개인키 (d, n)을 사용하여 $$EM^d mod n$$ 계산
    - Hash function: 길이가 최소 224비트인 SHA-2 계열의 함수 사용
    - 난수 salt의 길이 = Hash function 길이
-   - \( M' \)의 처음 8바이트는 0x00으로 채움
+   - M'의 처음 8바이트는 0x00으로 채움
    - PS는 길이에 맞춰서 0x00으로 채움
    - TF = 0xBC (1바이트)
-   - \( mHash = \text{Hash}(M) \)
-   - \( H = \text{Hash}(M') \)
+   - mHash = Hash(M)
+   - H = Hash(M')
    - EM의 길이 = RSA의 key의 길이 = 2048bit
    - EM의 가장 왼쪽 비트(MSB, Most Significant Bit)가 1이면 강제로 0으로 바꿈
 
@@ -46,7 +46,7 @@ sudo apt install libgmp-dev
    void rsa_generate_key(void *e, void *d, void *n, int mode);
    ```
 
-2. **rsa_cipher**: m ← m^k mod n  계산하는 함수
+2. **rsa_cipher**: $$m ← m^k mod n$$  계산하는 함수
    - 성공하면 0, 그렇지 않으면 오류 코드 반환
    - 기본 제공되는 함수
    
