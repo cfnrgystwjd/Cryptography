@@ -261,6 +261,57 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
  */
 int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, void *s, int sha2_ndx)
 {
+    unsigned char mHash[SHA512_DIGEST_SIZE]; // Hash된 m 값 
+    unsigned char salt[SHA512_DIGEST_SIZE];  // Salt 값
+    unsigned char m_prime[1 + SHA512_DIGEST_SIZE + sizeof(salt)]; // M' = 0x00 || mHash || salt
+    unsigned char h[SHA512_DIGEST_SIZE]; // Hash된 M' 값 
+    unsigned char db[RSAKEYSIZE / 8 - SHA512_DIGEST_SIZE -1]; // 마스크 db 생성 
+    unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
+    size_t hLen, emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이 
+
+    // 1. 메시지 해싱 
+    if (choose_sha2(m, mLen, mHash, sha2_ndx) != 0) {
+        return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
+    }
+
+    // 2. 무작위로 salt 값 생성 
+    arc4random_buf(salt, sizeof(salt));
+
+    // 3. Hash 함수에 따라 길이 설정 
+    switch (sha2_ndx) {
+        case SHA224: hLen = SHA224_DIGEST_SIZE; break;
+        case SHA256: hLen = SHA256_DIGEST_SIZE; break;
+        case SHA384: hLen = SHA384_DIGEST_SIZE; break;
+        case SHA512: hLen = SHA512_DIGEST_SIZE; break;
+        case SHA512_224: hLen = SHA224_DIGEST_SIZE; break;
+        case SHA512_256: hLen = SHA256_DIGEST_SIZE; break;
+        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환 
+    }
+
+    // 4. M' 생성: M' = 0x00 || mHash || salt
+    m_prime[0] = 0x00;
+    memcpy(m_prime + 1, mHash, hLen);
+    memcpy(m_prime + 1 + hLen, salt, sizeof(salt));
+
+    // 5. M' 해싱 (= H)
+    if (choose_sha2(m_prime, 1 + hLen + sizeof(salt), h, sha2_ndx) != 0) {
+        return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
+    }
+
+    // 6. H를 mgf1을 이용해 db 생성
+    mgf1(h, hLen, db, emLen - hLen - 1, sha2_ndx);
+
+    // 7. sign encoded message
+    memcpy(em, db, emLen - hLen - 1); // db 복사
+    memcpy(em + emLen - hLen - 1, h, hLen); // h 복사
+    em[emLen - 1] = 0xbc; // 마지막 바이트는 0xbc
+
+    // 8. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
+    if (rsa_cipher(s, em, d) != 0) {
+        return PKCS_MSG_OUT_OF_RANGE; // 암호화 실패 시, 오류 반환 
+    }
+
+    return 0; 
 }
 
 /*
