@@ -263,8 +263,102 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
  */
 int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
 {
-}
+	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
+    size_t hLen;
+	size_t labelLen = 0; // 기본적으로 label을 0이라고 고려.
+	const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
+	const size_t k = RSAKEYSIZE / 8; // k는 RSA 모듈러스 n의 길이를 바이트 단위로 나타낸 값
 
+    switch(sha2_ndx){
+		case SHA224:
+			hLen = SHA224_DIGEST_SIZE;
+			break;
+         case SHA256:
+             hLen = SHA256_DIGEST_SIZE;
+             break;
+         case SHA384:
+             hLen = SHA384_DIGEST_SIZE;
+             break;
+         case SHA512:
+             hLen = SHA512_DIGEST_SIZE;
+             break;
+         case SHA512_224:
+             hLen = SHA224_DIGEST_SIZE;
+             break;
+         case SHA512_256:
+             hLen = SHA256_DIGEST_SIZE;
+             break;
+         default:
+             return -1;
+	}
+
+	// label이 NULL이 아니라면
+	if (label != NULL) {
+		labelLen = strlen((const char *) label); // label의 길이 저장
+		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 return
+	}
+
+	// message 길이 검증
+	if (mLen > k - 2 * hLen - 2) return PKCS_MSG_TOO_LONG;
+
+	// label을 hash하여 저장할 변수 선언
+	unsigned char lHash[hLen];
+
+	// label에 hash function 적용
+	choose_sha2(label, labelLen, lHash, sha2_ndx);
+
+	// padding string(PS) 생성
+	const size_t psLen = k - 2 * hLen - mLen - 2;
+	unsigned char paddingStr[psLen];
+	memset(paddingStr, 0, psLen);
+
+	// Data Block 구성
+	const size_t dbLen = k - hLen - 1;
+	unsigned char dataBlock[dbLen];
+	size_t offset = 0;
+	memcpy(dataBlock + offset, lHash, hLen);
+	offset += hLen;
+	memcpy(dataBlock + offset, paddingStr, psLen);
+	offset += psLen;
+	dataBlock[offset] = 0x01;
+	offset += 1;
+	memcpy(dataBlock + offset, m, mLen);
+	offset += mLen; 
+
+	// seed 생성
+	unsigned char seed[hLen];
+	arc4random_buf(seed, hLen);
+
+	// 생성된 seed가 MGF를 거침. 이게 dbMask.
+	unsigned char dbMask[dbLen];
+	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
+
+	// DB와 dbMask XOR 연산 진행하여 DB에 저장 (Masked DB 도출)
+	for (int i = 0; i < dbLen; i++) {
+		dataBlock[i] ^= dbMask[i];
+	}
+	
+	// masked DB가 MGF를 거침. 이게 seedMask.
+	unsigned char seedMask[hLen];
+	mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
+
+	// seed와 seedMask XOR 연산 진행하기
+	for (int i = 0; i < hLen; i++) {
+		seed[i] ^= seedMask[i];
+	}
+
+	// Encoded Message 구성
+	unsigned char EM[RSAKEYSIZE];
+	offset = 0;
+	EM[offset] = 0x00;
+	offset += 1;
+	memcpy(EM + offset, seed, hLen);
+	offset += hLen;
+	memcpy(EM + offset, dataBlock, dbLen);
+	offset += dbLen;
+
+	return 0;
+}
 /*
  * rsaes_oaep_decrypt() - RSA decrytion with the EME-OAEP encoding method
  * 암호문 c를 개인키 (d,n)을 사용하여 원본 메시지 m과 길이 len을 회복한다.
@@ -273,6 +367,32 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
  */
 int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, const void *n, const void *c, int sha2_ndx)
 {
+	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
+	size_t hLen;
+
+	switch(sha2_ndx){
+		case SHA224:
+			hLen = 28;
+			break;
+		case SHA256:
+			hLen = 32;
+			break;
+		case SHA384:
+			hLen = 48;
+			break;
+		case SHA512:
+			hLen = 64;
+			break;
+		case SHA512_224:
+			hLen = 28;
+			break;
+		case SHA512_256:
+			hLen = 32;
+			break;
+		default:
+			return -1;
+	}
+	// label의 길이가 hLen보다 긴 경우
 }
 
 /*
@@ -280,6 +400,7 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
  * 길이가 len 바이트인 메시지 m을 개인키 (d,n)으로 서명한 결과를 s에 저장한다.
  * s의 크기는 RSAKEYSIZE와 같아야 한다. 성공하면 0, 그렇지 않으면 오류 코드를 넘겨준다.
  */
+
 int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, void *s, int sha2_ndx)
 {
     unsigned char mHash[SHA512_DIGEST_SIZE]; // Hash된 m 값 
@@ -340,6 +461,8 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
  * 길이가 len 바이트인 메시지 m에 대한 서명이 s가 맞는지 공개키 (e,n)으로 검증한다.
  * 성공하면 0, 그렇지 않으면 오류 코드를 넘겨준다.
  */
+
 int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, const void *s, int sha2_ndx)
 {
 }
+
