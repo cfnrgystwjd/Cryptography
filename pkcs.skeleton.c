@@ -262,7 +262,7 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
  * 성공하면 0, 그렇지 않으면 오류 코드를 넘겨준다.
  */
 int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
-{	
+{
 	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
     size_t hLen;
     size_t labelLen = 0; // 기본적으로 label을 0이라고 고려.
