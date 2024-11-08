@@ -334,34 +334,38 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	arc4random_buf(seed, hLen);
 
 	// 생성된 seed가 MGF를 거침. 이게 dbMask.
-     unsigned char dbMask[dbLen];
-     mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
+    unsigned char dbMask[dbLen];
+    mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
 
-     // DB와 dbMask XOR 연산 진행하여 DB에 저장 (Masked DB 도출)
-     for (int i = 0; i < dbLen; i++) {
-         dataBlock[i] ^= dbMask[i];
-     }
+    // DB와 dbMask XOR 연산 진행하여 DB에 저장 (Masked DB 도출)
+    for (int i = 0; i < dbLen; i++) {
+        dataBlock[i] ^= dbMask[i];
+    }
 
-     // masked DB가 MGF를 거침. 이게 seedMask.
-     unsigned char seedMask[hLen];
-     mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
+    // masked DB가 MGF를 거침. 이게 seedMask.
+    unsigned char seedMask[hLen];
+    mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
 
-     // seed와 seedMask XOR 연산 진행하기
-     for (int i = 0; i < hLen; i++) {
-         seed[i] ^= seedMask[i];
-     }
+    // seed와 seedMask XOR 연산 진행하기
+    for (int i = 0; i < hLen; i++) {
+        seed[i] ^= seedMask[i];
+    }
   
-	 // Encoded Message 구성
-	 unsigned char EM[RSAKEYSIZE];
-     offset = 0;     
-	 EM[offset] = 0x00;
-	 offset += 1;
-     memcpy(EM + offset, seed, hLen);
-	 offset += hLen;
-     memcpy(EM + offset, dataBlock, dbLen);
-     offset += dbLen;
+	// Encoded Message 구성
+	unsigned char EM[RSAKEYSIZE / 8];
+    offset = 0;     
+	EM[offset] = 0x00;
+	offset += 1;
+    memcpy(EM + offset, seed, hLen);
+	offset += hLen;
+    memcpy(EM + offset, dataBlock, dbLen);
+    offset += dbLen;
 
-     return 0;
+	if (rsa_cipher(EM, e, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
+
+	memcpy(c, EM, RSAKEYSIZE / 8);
+
+    return 0;
 }
 
 /*
