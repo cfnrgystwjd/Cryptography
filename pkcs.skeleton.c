@@ -15,7 +15,7 @@
  * 1차 수정 내용: rsaes_oaep_encrypt 구현 및 주석 삽입
  *
  * 2차 수정일: 2024.11.08.금요일
- * 2차 수정 내용: rsaes_oaep_decrypt 구현 및 주석 삽입
+ * 2차 수정 내용: rsaes_oaep_encrypt 오류 수정 및 주석 삽입, rsaes_oaep_decrypt 구현 및 주석 삽입
  * --------------------2---------------------
  * 학번:
  * 이름:
@@ -36,6 +36,7 @@
 #include <gmp.h>
 #include "pkcs.h"
 #include "sha2.h"
+#include <stdio.h>
 
 /*
  * rsa_generate_key() - generates RSA keys e, d and n in octet strings.
@@ -252,7 +253,6 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     return m;
 }
 
-
 /*
  * rsaes_oaep_encrypt() - RSA encrytion with the EME-OAEP encoding method
  * 길이가 len 바이트인 메시지 m을 공개키 (e,n)으로 암호화한 결과를 c에 저장한다.
@@ -330,9 +330,21 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	// m 복사
 	memcpy(dataBlock + offset, m, mLen);
 
+	printf("dataBlock: ");
+	for (int i = 0; i < dbLen; i++) {
+		printf("%02x ", dataBlock[i]);
+	}
+	printf("\n");
+
 	// seed 생성
 	unsigned char seed[hLen];
 	arc4random_buf(seed, hLen);
+	printf("seed: ");
+for (int i = 0; i < hLen; i++) {
+    printf("%02x ", seed[i]);
+}
+printf("\n");
+
 
 	// 생성된 seed가 MGF를 거침. 이게 dbMask.
 	unsigned char dbMask[dbLen];
@@ -346,11 +358,21 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	// masked DB가 MGF를 거침. 이게 seedMask.
 	unsigned char seedMask[hLen];
 	mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
+	printf("seed mask: ");
+	for (int i = 0; i < hLen; i++) {
+		printf("%02x ", seedMask[i]);
+	}
+	printf("\n");
 
 	// seed와 seedMask XOR 연산 진행하기
 	for (int i = 0; i < hLen; i++) {
 		seed[i] ^= seedMask[i];
 	}
+	printf("masked seed: ");
+	for (int i = 0; i < hLen; i++) {
+		printf("%02x ", seed[i]);
+	}
+	printf("\n");
 
 	// Encoded Message 구성
 	unsigned char EM[RSAKEYSIZE / 8];
@@ -361,6 +383,12 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	offset += hLen;
 	memcpy(EM + offset, dataBlock, dbLen);
 	offset += dbLen;
+
+	printf("EM: ");
+	for (int i = 0; i < RSAKEYSIZE / 8; i++) {
+		printf("%02x ", EM[i]);
+	}
+	printf("\n");
 
 	// rsa_cipher의 결과가 0이 아니면 오류 return
 	if (rsa_cipher(EM, e, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
@@ -379,7 +407,167 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
  * 성공하면 0, 그렇지 않으면 오류 코드를 넘겨준다.
  */
 int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, const void *n, const void *c, int sha2_ndx)
-{
+{	
+	// label이 NULL인 경우를 대비해 기본 길이를 0으로 설정
+	size_t labelLen = 0;
+	const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
+
+	// label이 NULL이 아니라면
+	if (label != NULL) {
+		labelLen = strlen((const char *) label); // label의 길이 저장
+		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 반환
+	}
+
+	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
+    size_t hLen;
+
+	switch(sha2_ndx) {
+		case SHA224:
+			hLen = SHA224_DIGEST_SIZE;
+			break;
+		case SHA256:
+			hLen = SHA256_DIGEST_SIZE;
+			break;
+		case SHA384:
+			hLen = SHA384_DIGEST_SIZE;
+			break;
+		case SHA512:
+			hLen = SHA512_DIGEST_SIZE;
+			break;
+		case SHA512_224:
+			hLen = SHA224_DIGEST_SIZE;
+			break;
+		case SHA512_256:
+			hLen = SHA256_DIGEST_SIZE;
+			break;
+		default:
+			return -1;
+	}
+
+	// label에 대한 hash 진행. (추후 복원된 DB에서 추출한 lHash와 비교를 위함.)
+	unsigned char labelHash[hLen];
+	choose_sha2(label, labelLen, labelHash, sha2_ndx);
+
+	// RSA decrypt 진행
+	if (rsa_cipher((void *)c, d, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
+
+	// RSA decrytion 후 얻은 암호화된 메시지 c를 EM에 저장
+	unsigned char *EM = (unsigned char *) c;
+	
+	printf("EM : ");
+	for (int i = 0; i < RSAKEYSIZE / 8; i++) {
+		printf("%02x ", EM[i]);
+	}
+	printf("\n");
+
+	// EM 검증 진행
+	// EM의 첫 바이트가 0x00이 아니면 오류 return
+	size_t offset = 0;
+	if (EM[offset] != 0x00) return PKCS_INITIAL_NONZERO;
+
+	offset += 1;
+
+	// maskedSeed 추출
+	unsigned char maskedSeed[hLen];
+	memcpy(maskedSeed, EM + offset, hLen);
+	offset += hLen;
+	
+	// maskedDB 추출
+	size_t dbLen = RSAKEYSIZE / 8 - hLen - 1;
+	unsigned char maskedDB[dbLen];
+	memcpy(maskedDB, EM + offset, dbLen);
+
+	// Seed 복원
+	// maskedSeed = Seed ^ seedMask
+	// seedMask = MGF1(maskedDB)
+	unsigned char seedMask[hLen];
+	// maskedDB에 mgf1을 적용시켜서 seedMask을 얻음.
+	mgf1(maskedDB, dbLen, seedMask, hLen, sha2_ndx);
+	// maskedSeed와 seedMask를 XOR 연산하여 seed를 얻음.
+	unsigned char seed[hLen];
+	for (int i = 0; i < hLen; i++) {
+		seed[i] = maskedSeed[i] ^ seedMask[i];
+	}
+
+	// Seed 복원 과정 디버깅
+printf("maskedSeed: ");
+for (int i = 0; i < hLen; i++) {
+    printf("%02x ", maskedSeed[i]);
+}
+printf("\n");
+
+printf("seedMask: ");
+for (int i = 0; i < hLen; i++) {
+    printf("%02x ", seedMask[i]);
+}
+printf("\n");
+
+printf("Recovered seed: ");
+for (int i = 0; i < hLen; i++) {
+    printf("%02x ", seed[i]);
+}
+printf("\n");
+
+	// DB 복원
+	// maskedDB = dbMask ^ DB
+	// dbMask = MGF1(seed)
+	// dbMask를 저장할  변수 선언
+	unsigned char dbMask[dbLen];
+	// seed에 mgf1을 적용시켜서 dbMask를 얻음.
+	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
+	// dbMask와 maskedDB를 XOR 연산하여 DB를 얻음.
+	unsigned char dataBlock[dbLen];
+	for (int i = 0; i < dbLen; i++) {
+		dataBlock[i] = maskedDB[i] ^ dbMask[i];
+	}
+
+	// DB 복원 과정 디버깅
+printf("maskedDB: ");
+for (int i = 0; i < dbLen; i++) {
+    printf("%02x ", maskedDB[i]);
+}
+printf("\n");
+
+printf("dbMask: ");
+for (int i = 0; i < dbLen; i++) {
+    printf("%02x ", dbMask[i]);
+}
+printf("\n");
+
+printf("Recovered dataBlock: ");
+for (int i = 0; i < dbLen; i++) {
+    printf("%02x ", dataBlock[i]);
+}
+printf("\n");
+
+	// 복원된 DB에 대해서 검증
+	offset = 0;
+	unsigned char lHash[hLen];
+	memcpy(lHash, dataBlock + offset, hLen);
+	offset += hLen;
+
+	// 복원된 lHash와 복호화 인수로 들어온 label에 대한 hash 값 비교
+	for (int i = 0; i < hLen; i++) {
+		if (labelHash[i] != lHash[i]) return PKCS_HASH_MISMATCH;
+	}
+
+	// paddingStr 파트 지나가기
+	size_t psLen = 0;
+	while (offset < dbLen && dataBlock[offset] == 0x00) {
+		offset++;
+		psLen++;
+	}
+
+	// paddingStr 파트가 끝나고 그 다음 차례에 구분자 0x01이 오지 않으면 오류 return
+	if (offset >= dbLen || dataBlock[offset] != 0x01) return PKCS_INVALID_PS;
+
+	// 구분자 검증 완료하면 offset 1 증가
+	offset++;
+
+	*mLen = dbLen - hLen - psLen - 1;
+	memcpy(m, dataBlock + offset, *mLen);
+
+	return 0;
 }
 
 /*
