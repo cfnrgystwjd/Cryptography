@@ -17,8 +17,14 @@
  * 2차 수정일: 2024.11.08.금요일
  * 2차 수정 내용: rsaes_oaep_decrypt 구현 및 주석 삽입
  * --------------------2---------------------
- * 학번:
- * 이름:
+ * 학번: 2021043209
+ * 이름: 노은솔
+ * 
+ * 1차 수정일: 2024.11.06 수요일
+ * 1차 수정 내용: rsassa_pss_sign 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.10 금요일
+ * 2차 수정 내용: rsassa_pss_sign 피드백 반영 및 수정 
  * --------------------3---------------------
  * 학번:
  * 이름:
@@ -391,9 +397,8 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
 {
     unsigned char mHash[SHA512_DIGEST_SIZE]; // Hash된 m 값 
     unsigned char salt[SHA512_DIGEST_SIZE];  // Salt 값
-    unsigned char m_prime[1 + SHA512_DIGEST_SIZE + sizeof(salt)]; // M' = 0x00 || mHash || salt
+    unsigned char m_prime[8 + SHA512_DIGEST_SIZE + SHA512_DIGEST_SIZE]; // M' = 0x00...0 || mHash || salt
     unsigned char h[SHA512_DIGEST_SIZE]; // Hash된 M' 값 
-    unsigned char db[RSAKEYSIZE / 8 - SHA512_DIGEST_SIZE -1]; // 마스크 db 생성 
     unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
     size_t hLen, emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이 
 
@@ -402,10 +407,7 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
         return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
     }
 
-    // 2. 무작위로 salt 값 생성 
-    arc4random_buf(salt, sizeof(salt));
-
-    // 3. Hash 함수에 따라 길이 설정 
+    // 2. Hash 함수에 따라 길이 설정 
     switch (sha2_ndx) {
         case SHA224: hLen = SHA224_DIGEST_SIZE; break;
         case SHA256: hLen = SHA256_DIGEST_SIZE; break;
@@ -416,23 +418,39 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
         default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환 
     }
 
-    // 4. M' 생성: M' = 0x00 || mHash || salt
-    m_prime[0] = 0x00;
-    memcpy(m_prime + 1, mHash, hLen);
-    memcpy(m_prime + 1 + hLen, salt, sizeof(salt));
+    // 3. 무작위로 salt 값 생성 
+    arc4random_buf(salt, hLen); // 해시 길이만큼 salt 초기화
+
+    // 4. M' 생성: M' = 0x00...00 || mHash || salt
+    memset(m_prime, 0x00, 8); // 첫 8바이트 0x00 패딩
+    memcpy(m_prime + 8, mHash, hLen);
+    memcpy(m_prime + 8 + hLen, salt, hLen);
 
     // 5. M' 해싱 (= H)
-    if (choose_sha2(m_prime, 1 + hLen + sizeof(salt), h, sha2_ndx) != 0) {
+    if (choose_sha2(m_prime, 8 + hLen + hLen, h, sha2_ndx) != 0) {
         return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
     }
 
-    // 6. H를 mgf1을 이용해 db 생성
-    mgf1(h, hLen, db, emLen - hLen - 1, sha2_ndx);
+    // 6. db 생성: db = 0x00...0 || 0x01 || salt
+    unsigned char db[emLen - hLen - 1]; // db 생성 
+    memset(db, 0x00, emLen - hLen - hLen - 2); // 0 패딩
+    db[emLen - hLen - hLen - 2] = 0x01; // 중간에 0x01 추가
+    memcpy(db + emLen - hLen - hLen - 1, salt, hLen); // salt 추가
 
-    // 7. sign encoded message
-    memcpy(em, db, emLen - hLen - 1); // db 복사
+    // 7. h를 mgf1을 이용해 db에 XOR하여 maskedDB 생성
+    unsigned char mgf_out[emLen - hLen - 1];
+    mgf1(h, hLen, mgf_out, emLen - hLen - 1, sha2_ndx);
+    for (size_t i = 0; i < emLen - hLen - 1; i++) {
+        db[i] ^= mgf_out[i];
+    }
+
+    // 8. maskedDB와 h로 em 구성
+    memcpy(em, db, emLen - hLen - 1); // maskedDB 복사
     memcpy(em + emLen - hLen - 1, h, hLen); // h 복사
     em[emLen - 1] = 0xbc; // 마지막 바이트는 0xbc
+
+    // 9. 첫 비트 0으로 설정
+    em[0] &= 0x7F;
 
     // 8. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
     if (rsa_cipher(s, em, d) != 0) {
