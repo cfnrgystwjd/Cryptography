@@ -4,6 +4,27 @@
  * 한양대학교 ERICA 학생이 아닌 자는 이 프로그램을 수정하거나 배포할 수 없다.
  * 프로그램을 수정할 경우 날짜, 학과, 학번, 이름, 수정 내용을 기록한다.
  */
+
+/*
+ * 학과: 컴퓨터학부
+ * --------------------1---------------------
+ * 학번: 2019060637
+ * 이름: 추효정
+ * 
+ * 1차 수정일: 2024.11.07.목요일
+ * 1차 수정 내용: rsaes_oaep_encrypt 구현 및 주석 삽입
+ *
+ * 2차 수정일: 2024.11.08.금요일
+ * 2차 수정 내용: rsaes_oaep_decrypt 구현 및 주석 삽입
+ * --------------------2---------------------
+ * 학번:
+ * 이름:
+ * --------------------3---------------------
+ * 학번:
+ * 이름:
+ * 
+ */
+
 #ifdef __linux__
 #include <bsd/stdlib.h>
 #elif __APPLE__
@@ -242,6 +263,113 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
  */
 int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
 {
+	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
+    size_t hLen;
+    size_t labelLen = 0; // 기본적으로 label을 0이라고 고려.
+    const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
+    const size_t k = RSAKEYSIZE / 8; // k는 RSA 모듈러스 n의 길이를 바이트 단위로 나타낸 값
+
+	switch(sha2_ndx) {
+		case SHA224:
+			hLen = SHA224_DIGEST_SIZE;
+			break;
+		case SHA256:
+			hLen = SHA256_DIGEST_SIZE;
+			break;
+		case SHA384:
+			hLen = SHA384_DIGEST_SIZE;
+			break;
+		case SHA512:
+			hLen = SHA512_DIGEST_SIZE;
+			break;
+		case SHA512_224:
+			hLen = SHA224_DIGEST_SIZE;
+			break;
+		case SHA512_256:
+			hLen = SHA256_DIGEST_SIZE;
+			break;
+		default:
+			return -1;
+	}
+ 
+	// label이 NULL이 아니라면
+	if (label != NULL) {
+		labelLen = strlen((const char *) label); // label의 길이 저장
+		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 반환
+	}
+
+	// message 길이 검증
+	if (mLen > k - 2 * hLen - 2) return PKCS_MSG_TOO_LONG;
+
+	// label을 hash하여 저장할 변수 선언
+	unsigned char lHash[hLen];
+
+	// label에 hash function 적용
+	choose_sha2(label, labelLen, lHash, sha2_ndx);
+	
+	// padding string(PS) 생성
+	const size_t psLen = k - 2 * hLen - mLen - 2;
+	unsigned char paddingStr[psLen];
+	memset(paddingStr, 0, psLen);
+
+	// Data Block 구성
+	const size_t dbLen = k - hLen - 1;
+	unsigned char dataBlock[dbLen];
+
+	// dataBlock에 lHash, paddingStr, 0x01, m 순서대로 복사
+	size_t offset = 0;
+	// lHash 복사
+	memcpy(dataBlock + offset, lHash, hLen);
+	offset += hLen;
+	// paddingStr 복사
+	memcpy(dataBlock + offset, paddingStr, psLen);
+	offset += psLen;
+	// paddingStr 구분자 0x01 추가
+	dataBlock[offset] = 0x01;
+	offset += 1;
+	// m 복사
+	memcpy(dataBlock + offset, m, mLen);
+
+	// seed 생성
+	unsigned char seed[hLen];
+	arc4random_buf(seed, hLen);
+
+	// 생성된 seed가 MGF를 거침. 이게 dbMask.
+	unsigned char dbMask[dbLen];
+	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
+
+	// DB와 dbMask XOR 연산 진행하여 DB에 저장 (Masked DB 도출)
+	for (int i = 0; i < dbLen; i++) {
+		dataBlock[i] ^= dbMask[i];
+	}
+
+	// masked DB가 MGF를 거침. 이게 seedMask.
+	unsigned char seedMask[hLen];
+	mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
+
+	// seed와 seedMask XOR 연산 진행하기
+	for (int i = 0; i < hLen; i++) {
+		seed[i] ^= seedMask[i];
+	}
+
+	// Encoded Message 구성
+	unsigned char EM[RSAKEYSIZE / 8];
+	offset = 0;
+	EM[offset] = 0x00;
+	offset += 1;
+	memcpy(EM + offset, seed, hLen);
+	offset += hLen;
+	memcpy(EM + offset, dataBlock, dbLen);
+	offset += dbLen;
+
+	// rsa_cipher의 결과가 0이 아니면 오류 return
+	if (rsa_cipher(EM, e, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
+
+	// 암호화된 결과 EM을 c에 복사
+	memcpy(c, EM, RSAKEYSIZE / 8);
+	
+	// 성공적으로 암호화가 완료됐다면 return 0;
+	return 0;
 }
 
 /*
