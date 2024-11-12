@@ -170,8 +170,8 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
 void i2osp(int x, int xLen, unsigned char *X)
 {
     for(int i=0; i<xLen; i++){
-    X[xLen - 1 - i] = x & 0x000000ff;
-    x >>= 8;
+        X[xLen - 1 - i] = x & 0x000000ff;
+        x >>= 8;
     }
 }
 /*
@@ -206,37 +206,28 @@ int choose_sha2(const unsigned char *message, unsigned int len, unsigned char *d
 }
 
 /*
+ * SHA-2 해시 길이 설정 함수
+ */ 
+size_t get_sha2_digest_size(int sha2_ndx) {
+    switch (sha2_ndx) {
+        case SHA224: return SHA224_DIGEST_SIZE;
+        case SHA256: return SHA256_DIGEST_SIZE;
+        case SHA384: return SHA384_DIGEST_SIZE;
+        case SHA512: return SHA512_DIGEST_SIZE;
+        case SHA512_224: return SHA224_DIGEST_SIZE;
+        case SHA512_256: return SHA256_DIGEST_SIZE;
+        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환
+    }
+}
+
+/*
  * mgf1 - 해시 함수에 기반한 마스크 생성 함수
  * mgfS: Seed 값, sLen: Seed 길이, m: mLen 길이의 옥텟 문자열 형태의 마스크, mLen: 마스크의 길이, sha2_ndx: 해시 함수
  * mgfS를 받아서 mLen 길이의 m으로 return한다.
  */
 unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, size_t mLen, int sha2_ndx)
 {
-    size_t hLen; // 해시 함수 출력 길이
-
-    // 해시 값에 따른 해시 길이 설정
-    switch(sha2_ndx){
-        case SHA224: 
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        case SHA384:
-            hLen = SHA384_DIGEST_SIZE;
-            break;
-        case SHA512:
-            hLen = SHA512_DIGEST_SIZE;
-            break;
-        case SHA512_224:
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA512_256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        default:
-            return NULL;
-    }
+    size_t hLen = get_sha2_digest_size(sha2_ndx); // 해시 함수 출력 길이
 
     // 최대 마스크 길이 확인
    // if(mLen > (0xFFFFFFFF * hLen))
@@ -261,21 +252,6 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     // temp 배열의 앞에서 mLen 만큼 복사해서 마스크 값 생성
     memcpy(m, temp, mLen);
     return m;
-}
-
-/*
- * SHA-2 해시 길이 설정 함수
- */ 
-size_t get_sha2_digest_size(int sha2_ndx) {
-    switch (sha2_ndx) {
-        case SHA224: return SHA224_DIGEST_SIZE;
-        case SHA256: return SHA256_DIGEST_SIZE;
-        case SHA384: return SHA384_DIGEST_SIZE;
-        case SHA512: return SHA512_DIGEST_SIZE;
-        case SHA512_224: return SHA224_DIGEST_SIZE;
-        case SHA512_256: return SHA256_DIGEST_SIZE;
-        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환
-    }
 }
 
 /*
@@ -482,6 +458,7 @@ int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, 
     unsigned char m_prime[8 + hLen + hLen]; // M' = 0x00...0 || mHash || salt
     unsigned char h[hLen]; // Hash된 M' 값
     unsigned char db[RSAKEYSIZE / 8 - hLen - 1];
+    unsigned char mgf_out[RSAKEYSIZE / 8 - hLen - 1]; // H mgf한 값
     unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
     unsigned char maskedDB[RSAKEYSIZE / 8 - hLen - 1];
     size_t emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이
