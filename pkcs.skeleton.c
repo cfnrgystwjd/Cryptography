@@ -15,7 +15,12 @@
  * 1차 수정 내용: rsaes_oaep_encrypt 구현 및 주석 삽입
  *
  * 2차 수정일: 2024.11.08.금요일
- * 2차 수정 내용: rsaes_oaep_decrypt 구현 및 주석 삽입
+ * 2차 수정 내용: rsaes_oaep_encrypt 오류 수정 및 주석 삽입, rsaes_oaep_decrypt 구현 및 주석 삽입
+ * 3차 수정일: 2024.11.11.월요일
+ * 3차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 5) 및 디버깅 코드 삽입
+ *
+ * 4차 수정일: 2024.11.12.화요일
+ * 4차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 4)
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -29,9 +34,17 @@
  * 3차 수정일: 2024.11.11 월요일
  * 3차 수정 내용: rsassa_pss_sign 2차 피드백 반영 및 지역 함수로 변환 
  * --------------------3---------------------
- * 학번:
- * 이름:
+ * 학번: 202187083
+ * 이름: 이예나
  * 
+ * 1차 수정일: 2024.11.04. 월요일
+ * 1차 수정 내용: i2osp, mgf1, choose_sha2 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.09 토요일
+ * 2차 수정 내용: rsassa_pss_verify 구현 및 주석 삽입
+ * 
+ * 3차 수정일: 2024.11.12 화요일
+ * 3차 수정 내용: i2osp, mgf1 수정
  */
 
 #ifdef __linux__
@@ -45,6 +58,7 @@
 #include <gmp.h>
 #include "pkcs.h"
 #include "sha2.h"
+#include <stdio.h>
 
 /*
  * rsa_generate_key() - generates RSA keys e, d and n in octet strings.
@@ -161,14 +175,9 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
  */
 void i2osp(int x, int xLen, unsigned char *X)
 {
-    // x값이 xLen 길이 표현 최대 가능값 초과시 종료
-    if(x >= (1U << (8 * xLen)))
-        return;
-    
-    // x 역순으로 1바이트씩 X에 저장
-    for(int i=xLen-1; i>=0; i--){
-        X[i] = x & 0xFF; // 하위 8비트 X에 저장
-        x >>= 8; // 다음 8비트를 위해 오른쪽으로 쉬프트
+    for(int i=0; i<xLen; i++){
+        X[xLen - 1 - i] = x & 0x000000ff;
+        x >>= 8;
     }
 }
 
@@ -201,6 +210,21 @@ int choose_sha2(const unsigned char *message, unsigned int len, unsigned char *d
             return -1;
     }
     return 0;
+}
+
+/*
+ * SHA-2 해시 길이 설정 함수
+ */
+size_t get_sha2_digest_size(int sha2_ndx) {
+    switch (sha2_ndx) {
+        case SHA224: return SHA224_DIGEST_SIZE;
+        case SHA256: return SHA256_DIGEST_SIZE;
+        case SHA384: return SHA384_DIGEST_SIZE;
+        case SHA512: return SHA512_DIGEST_SIZE;
+        case SHA512_224: return SHA224_DIGEST_SIZE;
+        case SHA512_256: return SHA256_DIGEST_SIZE;
+        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환
+    }
 }
 
 /*
@@ -237,11 +261,11 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     }
 
     // 최대 마스크 길이 확인
-    if(mLen > (0xFFFFFFFF * hLen))
-        return NULL;
+    //if(mLen > (0xFFFFFFFF * hLen))
+    //    return NULL;
 
     // 해시 계산 횟수 -> count = ceil(mLen / hLen)
-    uint32_t count = (mLen + hLen -1) / hLen; 
+    uint32_t count = (mLen + hLen -1) / hLen - 1; 
     
     // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
     unsigned char mgfTemp[sLen + 4];
@@ -287,34 +311,11 @@ size_t get_sha2_digest_size(int sha2_ndx) {
 int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
 {
 	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
-    size_t hLen;
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
     size_t labelLen = 0; // 기본적으로 label을 0이라고 고려.
     const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
     const size_t k = RSAKEYSIZE / 8; // k는 RSA 모듈러스 n의 길이를 바이트 단위로 나타낸 값
 
-	switch(sha2_ndx) {
-		case SHA224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		case SHA384:
-			hLen = SHA384_DIGEST_SIZE;
-			break;
-		case SHA512:
-			hLen = SHA512_DIGEST_SIZE;
-			break;
-		case SHA512_224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA512_256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		default:
-			return -1;
-	}
- 
 	// label이 NULL이 아니라면
 	if (label != NULL) {
 		labelLen = strlen((const char *) label); // label의 길이 저장
@@ -402,7 +403,99 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
  * 성공하면 0, 그렇지 않으면 오류 코드를 넘겨준다.
  */
 int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, const void *n, const void *c, int sha2_ndx)
-{
+{	
+	// label이 NULL인 경우를 대비해 기본 길이를 0으로 설정
+	size_t labelLen = 0;
+	const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
+
+	// label이 NULL이 아니라면
+	if (label != NULL) {
+		labelLen = strlen((const char *) label); // label의 길이 저장
+		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 반환
+	}
+
+	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
+	
+	// label에 대한 hash 진행. (추후 복원된 DB에서 추출한 lHash와 비교를 위함.)
+	unsigned char labelHash[hLen];
+	choose_sha2(label, labelLen, labelHash, sha2_ndx);
+
+	// RSA decrypt 진행
+	if (rsa_cipher((void *)c, d, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
+
+	// RSA decrytion 후 얻은 암호화된 메시지 c를 EM에 저장
+	unsigned char *EM = (unsigned char *) c;	
+
+	// EM 검증 진행
+	// EM의 첫 바이트가 0x00이 아니면 오류 return
+	size_t offset = 0;
+	if (EM[offset] != 0x00) return PKCS_INITIAL_NONZERO;
+
+	offset += 1;
+
+	// maskedSeed 추출
+	unsigned char maskedSeed[hLen];
+	memcpy(maskedSeed, EM + offset, hLen);
+	offset += hLen;
+	
+	// maskedDB 추출
+	size_t dbLen = RSAKEYSIZE / 8 - hLen - 1;
+	unsigned char maskedDB[dbLen];
+	memcpy(maskedDB, EM + offset, dbLen);
+
+	// Seed 복원
+	// maskedSeed = Seed ^ seedMask
+	// seedMask = MGF1(maskedDB)
+	unsigned char seedMask[hLen];
+	// maskedDB에 mgf1을 적용시켜서 seedMask을 얻음.
+	mgf1(maskedDB, dbLen, seedMask, hLen, sha2_ndx);
+	// maskedSeed와 seedMask를 XOR 연산하여 seed를 얻음.
+	unsigned char seed[hLen];
+	for (int i = 0; i < hLen; i++) {
+		seed[i] = maskedSeed[i] ^ seedMask[i];
+	}
+
+	// DB 복원
+	// maskedDB = dbMask ^ DB
+	// dbMask = MGF1(seed)
+	// dbMask를 저장할  변수 선언
+	unsigned char dbMask[dbLen];
+	// seed에 mgf1을 적용시켜서 dbMask를 얻음.
+	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
+	// dbMask와 maskedDB를 XOR 연산하여 DB를 얻음.
+	unsigned char dataBlock[dbLen];
+	for (int i = 0; i < dbLen; i++) {
+		dataBlock[i] = maskedDB[i] ^ dbMask[i];
+	}
+
+	// 복원된 DB에 대해서 검증
+	offset = 0;
+	unsigned char lHash[hLen];
+	memcpy(lHash, dataBlock + offset, hLen);
+	offset += hLen;
+
+	for (int i = 0; i < hLen; i++) {
+		if (labelHash[i] != lHash[i]) return PKCS_HASH_MISMATCH;
+	}
+
+	// paddingStr 파트 지나가기
+	size_t psLen = 0;
+	while (offset < dbLen && dataBlock[offset] == 0x00) {
+		offset++;
+		psLen++;
+	}
+
+	// paddingStr 파트가 끝나고 그 다음 차례에 구분자 0x01이 오지 않으면 오류 return
+	if (offset >= dbLen || dataBlock[offset] != 0x01) return PKCS_INVALID_PS;
+
+	// 구분자 검증 완료하면 offset 1 증가
+	offset++;
+
+	*mLen = dbLen - hLen - psLen - 1;
+	memcpy(m, dataBlock + offset, *mLen);
+
+	return 0;
 }
 
 /*
