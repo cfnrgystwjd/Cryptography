@@ -29,9 +29,17 @@
  * 3차 수정일: 2024.11.11 월요일
  * 3차 수정 내용: rsassa_pss_sign 2차 피드백 반영 및 지역 함수로 변환 
  * --------------------3---------------------
- * 학번:
- * 이름:
+ * 학번: 2021087083
+ * 이름: 이예나
  * 
+ * 1차 수정일: 2024.11.04. 월요일
+ * 1차 수정 내용: i2osp, mgf1, choose_sha2 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.09.토요일
+ * 2차 수정 내용: rsassa_pss_verify 구현 및 주석 삽입
+ * 
+ * 3차 수정일: 2024.11.12 화요일
+ * 3차 수정 내용: i2osp, mgf1 수정
  */
 
 #ifdef __linux__
@@ -161,17 +169,11 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
  */
 void i2osp(int x, int xLen, unsigned char *X)
 {
-    // x값이 xLen 길이 표현 최대 가능값 초과시 종료
-    if(x >= (1U << (8 * xLen)))
-        return;
-    
-    // x 역순으로 1바이트씩 X에 저장
-    for(int i=xLen-1; i>=0; i--){
-        X[i] = x & 0xFF; // 하위 8비트 X에 저장
-        x >>= 8; // 다음 8비트를 위해 오른쪽으로 쉬프트
+    for(int i=0; i<xLen; i++){
+    X[xLen - 1 - i] = x & 0x000000ff;
+    x >>= 8;
     }
 }
-
 /*
  * sha2 함수를 정해서 해당 sha 함수를 호출한다.
  * message: 해시할 메시지, len: 메시지 길이, digest: 해시 결과 저장될 배열, sha2_ndx: 해시 함수
@@ -237,11 +239,11 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     }
 
     // 최대 마스크 길이 확인
-    if(mLen > (0xFFFFFFFF * hLen))
-        return NULL;
+   // if(mLen > (0xFFFFFFFF * hLen))
+     //   return PKCS_MSG_TOO_LONG;
 
     // 해시 계산 횟수 -> count = ceil(mLen / hLen)
-    uint32_t count = (mLen + hLen -1) / hLen; 
+    uint32_t count = (mLen + hLen -1) / hLen - 1; 
     
     // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
     unsigned char mgfTemp[sLen + 4];
@@ -474,4 +476,65 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
  */
 int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, const void *s, int sha2_ndx)
 {
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
+    unsigned char mHash[hLen]; // Hash된 m 값 
+    unsigned char salt[hLen];  // Salt 값
+    unsigned char m_prime[8 + hLen + hLen]; // M' = 0x00...0 || mHash || salt
+    unsigned char h[hLen]; // Hash된 M' 값
+    unsigned char db[RSAKEYSIZE / 8 - hLen - 1];
+    unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
+    unsigned char maskedDB[RSAKEYSIZE / 8 - hLen - 1];
+    size_t emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이
+
+    if(rsa_cipher(em, s, e) != 0){
+        return PKCS_MSG_OUT_OF_RANGE;
+    }
+
+    if(em[emLen - 1] != 0xbc){
+        return PKCS_INVALID_LAST;
+    }
+
+    if((em[0] & 0x80) != 0){
+        return PKCS_INVALID_INIT;
+    }
+
+    memcpy(maskedDB, em, emLen - hLen - hLen - 1);
+    memcpy(h, em + emLen - hLen - 1, hLen);
+
+    mgf1(h, hLen, db, emLen - hLen - 1, sha2_ndx);
+    for(size_t i=0; i<emLen-hLen-1; i++){
+        db[i] ^= maskedDB[i];
+    }
+
+    size_t zeroLen = emLen - hLen - 1 - hLen - 1;
+    for(size_t i=0; i<zeroLen; i++){
+        if(db[i] != 0x00){
+            return PKCS_INVALID_PD2;
+        }
+    }
+
+    if(db[zeroLen] != 0x01){
+        return PKCS_INVALID_PD2;
+    }
+
+    memcpy(salt, db + zeroLen + 1, hLen);
+
+    if(choose_sha2(m, mLen, mHash, sha2_ndx) != 0){
+        return PKCS_HASH_TOO_LONG;
+    }
+
+    memset(m_prime, 0, 8);
+    memcpy(m_prime + 8, mHash, hLen);
+    memcpy(m_prime + 8 + hLen, salt, hLen);
+
+    unsigned char h_prime[hLen];
+    if(choose_sha2(m_prime, 8 + hLen + hLen, h_prime, sha2_ndx) != 0){
+        return PKCS_HASH_TOO_LONG;
+    }
+
+    if(memcmp(h,h_prime, hLen) != 0){
+        return PKCS_HASH_MISMATCH;
+    }
+
+    return 0;
 }
