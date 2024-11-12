@@ -234,31 +234,8 @@ size_t get_sha2_digest_size(int sha2_ndx) {
  */
 unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, size_t mLen, int sha2_ndx)
 {
-    size_t hLen; // 해시 함수 출력 길이
-
     // 해시 값에 따른 해시 길이 설정
-    switch(sha2_ndx){
-        case SHA224: 
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        case SHA384:
-            hLen = SHA384_DIGEST_SIZE;
-            break;
-        case SHA512:
-            hLen = SHA512_DIGEST_SIZE;
-            break;
-        case SHA512_224:
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA512_256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        default:
-            return NULL;
-    }
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
 
     // 최대 마스크 길이 확인
     //if(mLen > (0xFFFFFFFF * hLen))
@@ -498,43 +475,58 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
     size_t emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이 
 
+    // mLen이 RSA키 크기보다 큰지 확인 
+    if (mLen > emLen - hLen - 1) {
+        return PKCS_MSG_TOO_LONG; // 메시지가 너무 긴 경우 오류 반환
+    }
+
     // 1. 메시지 해싱 
     if (choose_sha2(m, mLen, mHash, sha2_ndx) != 0) {
         return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
     }
 
-    // DEBUG: mHash 출력
-    printf("DEBUG: mHash = ");
-    for (size_t i = 0; i < hLen; i++) printf("%02x", mHash[i]);
-    printf("\n");
+    // // DEBUG: mHash 출력
+    // printf("DEBUG: mHash = ");
+    // for (size_t i = 0; i < hLen; i++) printf("%02x", mHash[i]);
+    // printf("\n");
 
     // 2. 무작위로 salt 값 생성 
     arc4random_buf(salt, hLen); // 해시 길이만큼 salt 초기화 
 
-    // DEBUG: salt 출력
-    printf("DEBUG: salt = ");
-    for (size_t i = 0; i < hLen; i++) printf("%02x", salt[i]);
-    printf("\n");
+    // unsigned char fixed_salt[32] = {
+    //     0x6e, 0x41, 0x97, 0x86, 0x02, 0xac, 0xca, 0x18, 
+    //     0x2e, 0x8b, 0xf5, 0x11, 0xb9, 0xac, 0xdb, 0x04, 
+    //     0xab, 0x32, 0x45, 0x72, 0x35, 0x8c, 0x15, 0x3d, 
+    //     0xe6, 0xcd, 0x3e, 0x0a
+    // };
+
+    // // salt에 고정된 값 복사
+    // memcpy(salt, fixed_salt, hLen);
+
+    // // DEBUG: salt 출력
+    // printf("DEBUG: salt = ");
+    // for (size_t i = 0; i < hLen; i++) printf("%02x", salt[i]);
+    // printf("\n");
 
     // 3. M' 생성: M' = 0x00...00 || mHash || salt
     memset(m_prime, 0x00, 8); // 첫 8바이트 0x00 패딩
     memcpy(m_prime + 8, mHash, hLen);
     memcpy(m_prime + 8 + hLen, salt, hLen);
 
-    // DEBUG: m_prime 출력
-    printf("DEBUG: m_prime = ");
-    for (size_t i = 0; i < sizeof(m_prime); i++) printf("%02x", m_prime[i]);
-    printf("\n");
+    // // DEBUG: m_prime 출력
+    // printf("DEBUG: m_prime = ");
+    // for (size_t i = 0; i < sizeof(m_prime); i++) printf("%02x", m_prime[i]);
+    // printf("\n");
 
     // 4. M' 해싱 (= H)
     if (choose_sha2(m_prime, 8 + hLen + hLen, h, sha2_ndx) != 0) {
         return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
     }
 
-    // DEBUG: h 출력
-    printf("DEBUG: h = ");
-    for (size_t i = 0; i < hLen; i++) printf("%02x", h[i]);
-    printf("\n");
+    // // DEBUG: h 출력
+    // printf("DEBUG: h = ");
+    // for (size_t i = 0; i < hLen; i++) printf("%02x", h[i]);
+    // printf("\n");
 
     // 5. db 생성: db = 0x00...0 || 0x01 || salt
     unsigned char db[emLen - hLen - 1]; // db 생성 
@@ -542,51 +534,47 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     db[emLen - hLen - hLen - 2] = 0x01; // 중간에 0x01 추가
     memcpy(db + emLen - hLen - hLen - 1, salt, hLen); // salt 추가
 
-    // DEBUG: db 출력
-    printf("DEBUG: db = ");
-    for (size_t i = 0; i < sizeof(db); i++) printf("%02x", db[i]);
-    printf("\n");
+    // // DEBUG: db 출력
+    // printf("DEBUG: db = ");
+    // for (size_t i = 0; i < sizeof(db); i++) printf("%02x", db[i]);
+    // printf("\n");
 
     // 6. h를 mgf1을 이용해 db에 XOR하여 maskedDB 생성
     unsigned char mgf_out[emLen - hLen - 1];
     mgf1(h, hLen, mgf_out, emLen - hLen - 1, sha2_ndx);
 
-    // DEBUG: mgf_out 출력
-    printf("DEBUG: mgf_out = ");
-    for (size_t i = 0; i < sizeof(mgf_out); i++) printf("%02x", mgf_out[i]);
-    printf("\n");
+    // // DEBUG: mgf_out 출력
+    // printf("DEBUG: mgf_out = ");
+    // for (size_t i = 0; i < sizeof(mgf_out); i++) printf("%02x", mgf_out[i]);
+    // printf("\n");
 
     for (size_t i = 0; i < emLen - hLen - 1; i++) {
         db[i] ^= mgf_out[i];
     }
 
-    // DEBUG: maskedDB 출력
-    printf("DEBUG: maskedDB = ");
-    for (size_t i = 0; i < sizeof(db); i++) printf("%02x", db[i]);
-    printf("\n");
+    // // DEBUG: maskedDB 출력
+    // printf("DEBUG: maskedDB = ");
+    // for (size_t i = 0; i < sizeof(db); i++) printf("%02x", db[i]);
+    // printf("\n");
 
     // 7. maskedDB와 h로 em 구성
     memcpy(em, db, emLen - hLen - 1); // maskedDB 복사
     memcpy(em + emLen - hLen - 1, h, hLen); // h 복사
     em[emLen - 1] = 0xbc; // 마지막 바이트는 0xbc
 
-    // DEBUG: em 출력
-    printf("DEBUG: em = ");
-    for (size_t i = 0; i < sizeof(em); i++) printf("%02x", em[i]);
-    printf("\n");
+    // // DEBUG: em 출력
+    // printf("DEBUG: em = ");
+    // for (size_t i = 0; i < sizeof(em); i++) printf("%02x", em[i]);
+    // printf("\n");
 
     // 8. 첫 비트 0으로 설정
     em[0] &= 0x7F;
 
     // 9. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
     if (rsa_cipher(s, em, d) != 0) {
+        printf("rsa_cipher error\n");
         return PKCS_MSG_OUT_OF_RANGE; // 암호화 실패 시, 오류 반환 
     }
-
-    // DEBUG: 서명 출력
-    printf("DEBUG: signature = ");
-    for (size_t i = 0; i < emLen; i++) printf("%02x", ((unsigned char*)s)[i]);
-    printf("\n");
 
     return 0; 
 }
