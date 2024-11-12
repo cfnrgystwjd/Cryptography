@@ -29,9 +29,17 @@
  * 3차 수정일: 2024.11.11 월요일
  * 3차 수정 내용: rsassa_pss_sign 2차 피드백 반영 및 지역 함수로 변환 
  * --------------------3---------------------
- * 학번:
- * 이름:
+ * 학번: 202187083
+ * 이름: 이예나
  * 
+ * 1차 수정일: 2024.11.04. 월요일
+ * 1차 수정 내용: i2osp, mgf1, choose_sha2 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.09 토요일
+ * 2차 수정 내용: rsassa_pss_verify 구현 및 주석 삽입
+ * 
+ * 3차 수정일: 2024.11.12 화요일
+ * 3차 수정 내용: i2osp, mgf1 수정
  */
 
 #ifdef __linux__
@@ -161,14 +169,9 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
  */
 void i2osp(int x, int xLen, unsigned char *X)
 {
-    // x값이 xLen 길이 표현 최대 가능값 초과시 종료
-    if(x >= (1U << (8 * xLen)))
-        return;
-    
-    // x 역순으로 1바이트씩 X에 저장
-    for(int i=xLen-1; i>=0; i--){
-        X[i] = x & 0xFF; // 하위 8비트 X에 저장
-        x >>= 8; // 다음 8비트를 위해 오른쪽으로 쉬프트
+    for(int i=0; i<xLen; i++){
+        X[xLen - 1 - i] = x & 0x000000ff;
+        x >>= 8;
     }
 }
 
@@ -237,11 +240,11 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     }
 
     // 최대 마스크 길이 확인
-    if(mLen > (0xFFFFFFFF * hLen))
-        return NULL;
+    //if(mLen > (0xFFFFFFFF * hLen))
+    //    return NULL;
 
     // 해시 계산 횟수 -> count = ceil(mLen / hLen)
-    uint32_t count = (mLen + hLen -1) / hLen; 
+    uint32_t count = (mLen + hLen -1) / hLen - 1; 
     
     // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
     unsigned char mgfTemp[sLen + 4];
