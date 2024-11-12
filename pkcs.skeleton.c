@@ -16,6 +16,11 @@
  *
  * 2차 수정일: 2024.11.08.금요일
  * 2차 수정 내용: rsaes_oaep_encrypt 오류 수정 및 주석 삽입, rsaes_oaep_decrypt 구현 및 주석 삽입
+ * 3차 수정일: 2024.11.11.월요일
+ * 3차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 5) 및 디버깅 코드 삽입
+ *
+ * 4차 수정일: 2024.11.12.화요일
+ * 4차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 4)
  * --------------------2---------------------
  * 학번:
  * 이름:
@@ -153,14 +158,9 @@ static int rsa_cipher(void *_m, const void *_k, const void *_n)
  */
 void i2osp(int x, int xLen, unsigned char *X)
 {
-    // x값이 xLen 길이 표현 최대 가능값 초과시 종료
-    if(x >= (1U << (8 * xLen)))
-        return;
-    
-    // x 역순으로 1바이트씩 X에 저장
-    for(int i=xLen-1; i>=0; i--){
-        X[i] = x & 0xFF; // 하위 8비트 X에 저장
-        x >>= 8; // 다음 8비트를 위해 오른쪽으로 쉬프트
+    for(int i=0; i<xLen; i++){
+        X[xLen - 1 - i] = x & 0x000000ff;
+        x >>= 8;
     }
 }
 
@@ -193,6 +193,21 @@ int choose_sha2(const unsigned char *message, unsigned int len, unsigned char *d
             return -1;
     }
     return 0;
+}
+
+/*
+ * SHA-2 해시 길이 설정 함수
+ */
+size_t get_sha2_digest_size(int sha2_ndx) {
+    switch (sha2_ndx) {
+        case SHA224: return SHA224_DIGEST_SIZE;
+        case SHA256: return SHA256_DIGEST_SIZE;
+        case SHA384: return SHA384_DIGEST_SIZE;
+        case SHA512: return SHA512_DIGEST_SIZE;
+        case SHA512_224: return SHA224_DIGEST_SIZE;
+        case SHA512_256: return SHA256_DIGEST_SIZE;
+        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환
+    }
 }
 
 /*
@@ -229,8 +244,8 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     }
 
     // 최대 마스크 길이 확인
-    if(mLen > (0xFFFFFFFF * hLen))
-        return NULL;
+    //if(mLen > (0xFFFFFFFF * hLen))
+    //    return NULL;
 
     // 해시 계산 횟수 -> count = ceil(mLen / hLen)
     uint32_t count = (mLen + hLen -1) / hLen; 
@@ -253,6 +268,7 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     return m;
 }
 
+
 /*
  * rsaes_oaep_encrypt() - RSA encrytion with the EME-OAEP encoding method
  * 길이가 len 바이트인 메시지 m을 공개키 (e,n)으로 암호화한 결과를 c에 저장한다.
@@ -264,34 +280,11 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
 int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void *e, const void *n, void *c, int sha2_ndx)
 {
 	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
-    size_t hLen;
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
     size_t labelLen = 0; // 기본적으로 label을 0이라고 고려.
     const size_t MAX_LABEL_LENGTH = (1ULL << 61) - 1;
     const size_t k = RSAKEYSIZE / 8; // k는 RSA 모듈러스 n의 길이를 바이트 단위로 나타낸 값
 
-	switch(sha2_ndx) {
-		case SHA224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		case SHA384:
-			hLen = SHA384_DIGEST_SIZE;
-			break;
-		case SHA512:
-			hLen = SHA512_DIGEST_SIZE;
-			break;
-		case SHA512_224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA512_256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		default:
-			return -1;
-	}
- 
 	// label이 NULL이 아니라면
 	if (label != NULL) {
 		labelLen = strlen((const char *) label); // label의 길이 저장
@@ -330,35 +323,9 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	// m 복사
 	memcpy(dataBlock + offset, m, mLen);
 
-	printf("dataBlock: ");
-	for (int i = 0; i < dbLen; i++) {
-		printf("%02x ", dataBlock[i]);
-	}
-	printf("\n");
-
 	// seed 생성
-//	unsigned char seed[hLen];
-//	arc4random_buf(seed, hLen);
-
-	    unsigned char seed[hLen]; // VLA (Variable Length Array)
-
-    // 초기 값 설정을 위한 정적 배열
-    unsigned char seed_init[28] = {
-        0x20, 0x10, 0xff, 0x31, 0x60, 0x2c, 0xf3, 0x33,
-        0x41, 0x38, 0x3e, 0xe7, 0xb2, 0x63, 0x58, 0x36,
-        0x23, 0xa0, 0xce, 0x56, 0x71, 0xdf, 0x22, 0xb2,
-        0x50, 0x13, 0xc6, 0x42
-    };
-
-    // memcpy를 사용하여 seed 초기화
-    memcpy(seed, seed_init, hLen);
-
-	printf("seed-----------------: ");
-	for (int i = 0; i < hLen; i++) {
-    	printf("%02x ", seed[i]);
-		}
-	printf("\n");
-
+	unsigned char seed[hLen];
+	arc4random_buf(seed, hLen);
 
 	// 생성된 seed가 MGF를 거침. 이게 dbMask.
 	unsigned char dbMask[dbLen];
@@ -372,21 +339,11 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	// masked DB가 MGF를 거침. 이게 seedMask.
 	unsigned char seedMask[hLen];
 	mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
-	printf("seed mask: ");
-	for (int i = 0; i < hLen; i++) {
-		printf("%02x ", seedMask[i]);
-	}
-	printf("\n");
 
 	// seed와 seedMask XOR 연산 진행하기
 	for (int i = 0; i < hLen; i++) {
 		seed[i] ^= seedMask[i];
 	}
-	printf("masked seed: ");
-	for (int i = 0; i < hLen; i++) {
-		printf("%02x ", seed[i]);
-	}
-	printf("\n");
 
 	// Encoded Message 구성
 	unsigned char EM[RSAKEYSIZE / 8];
@@ -397,12 +354,6 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	offset += hLen;
 	memcpy(EM + offset, dataBlock, dbLen);
 	offset += dbLen;
-
-	printf("EM: ");
-	for (int i = 0; i < RSAKEYSIZE / 8; i++) {
-		printf("%02x ", EM[i]);
-	}
-	printf("\n");
 
 	// rsa_cipher의 결과가 0이 아니면 오류 return
 	if (rsa_cipher(EM, e, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
@@ -433,31 +384,8 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 	}
 
 	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
-    size_t hLen;
-
-	switch(sha2_ndx) {
-		case SHA224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		case SHA384:
-			hLen = SHA384_DIGEST_SIZE;
-			break;
-		case SHA512:
-			hLen = SHA512_DIGEST_SIZE;
-			break;
-		case SHA512_224:
-			hLen = SHA224_DIGEST_SIZE;
-			break;
-		case SHA512_256:
-			hLen = SHA256_DIGEST_SIZE;
-			break;
-		default:
-			return -1;
-	}
-
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
+	
 	// label에 대한 hash 진행. (추후 복원된 DB에서 추출한 lHash와 비교를 위함.)
 	unsigned char labelHash[hLen];
 	choose_sha2(label, labelLen, labelHash, sha2_ndx);
@@ -466,13 +394,7 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 	if (rsa_cipher((void *)c, d, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
 
 	// RSA decrytion 후 얻은 암호화된 메시지 c를 EM에 저장
-	unsigned char *EM = (unsigned char *) c;
-	
-	printf("EM : ");
-	for (int i = 0; i < RSAKEYSIZE / 8; i++) {
-		printf("%02x ", EM[i]);
-	}
-	printf("\n");
+	unsigned char *EM = (unsigned char *) c;	
 
 	// EM 검증 진행
 	// EM의 첫 바이트가 0x00이 아니면 오류 return
@@ -503,25 +425,6 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 		seed[i] = maskedSeed[i] ^ seedMask[i];
 	}
 
-	// Seed 복원 과정 디버깅
-printf("maskedSeed: ");
-for (int i = 0; i < hLen; i++) {
-    printf("%02x ", maskedSeed[i]);
-}
-printf("\n");
-
-printf("seedMask: ");
-for (int i = 0; i < hLen; i++) {
-    printf("%02x ", seedMask[i]);
-}
-printf("\n");
-
-printf("Recovered seed: ");
-for (int i = 0; i < hLen; i++) {
-    printf("%02x ", seed[i]);
-}
-printf("\n");
-
 	// DB 복원
 	// maskedDB = dbMask ^ DB
 	// dbMask = MGF1(seed)
@@ -535,32 +438,12 @@ printf("\n");
 		dataBlock[i] = maskedDB[i] ^ dbMask[i];
 	}
 
-	// DB 복원 과정 디버깅
-printf("maskedDB: ");
-for (int i = 0; i < dbLen; i++) {
-    printf("%02x ", maskedDB[i]);
-}
-printf("\n");
-
-printf("dbMask: ");
-for (int i = 0; i < dbLen; i++) {
-    printf("%02x ", dbMask[i]);
-}
-printf("\n");
-
-printf("Recovered dataBlock: ");
-for (int i = 0; i < dbLen; i++) {
-    printf("%02x ", dataBlock[i]);
-}
-printf("\n");
-
 	// 복원된 DB에 대해서 검증
 	offset = 0;
 	unsigned char lHash[hLen];
 	memcpy(lHash, dataBlock + offset, hLen);
 	offset += hLen;
 
-	// 복원된 lHash와 복호화 인수로 들어온 label에 대한 hash 값 비교
 	for (int i = 0; i < hLen; i++) {
 		if (labelHash[i] != lHash[i]) return PKCS_HASH_MISMATCH;
 	}

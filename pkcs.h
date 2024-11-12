@@ -7,8 +7,7 @@
 #ifndef _PKCS_H_
 #define _PKCS_H_
 
-// #define RSAKEYSIZE 2048
-#define RSAKEYSIZE 1024
+#define RSAKEYSIZE 2048
 
 /*
  * SHA-2 function index list

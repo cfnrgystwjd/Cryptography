@@ -15,7 +15,6 @@
 #include <string.h>
 #include <time.h>
 #include "pkcs.h"
-#include <gmp.h>
 
 static char *poet = "윤동주";
 static char *poem = "죽는 날까지 하늘을 우러러 한 점 부끄럼이 없기를, 잎새에 이는 바람에도 나는 괴로워했다. 별을 노래하는 마음으로 모든 죽어 가는 것을 사랑해야지 그리고 나한테 주어진 길을 걸어가야겠다. 오늘 밤에도 별이 바람에 스치운다.";
@@ -28,7 +27,7 @@ static char hidden[256] = {0x9e,0x30,0xaf,0xde,0xb6,0x28,0x3a,0x34,0xe1,0xde,0x6
 
 int main(void)
 {
-    // char e[RSAKEYSIZE/8], d[RSAKEYSIZE/8], n[RSAKEYSIZE/8];
+    char e[RSAKEYSIZE/8], d[RSAKEYSIZE/8], n[RSAKEYSIZE/8];
     char m[RSAKEYSIZE/8], c[RSAKEYSIZE/8], s[RSAKEYSIZE/8];
     long x, y;
     int i, val, count;
@@ -41,79 +40,31 @@ int main(void)
      * <RSA 키 생성 시험>
      * 길이는 RSAKEYSIZE 비트인 RSA 키를 생성한다.
      */
-//    rsa_generate_key(e, d, n, 1);
-//    printf("e = ");
-//    for (i = 0; i < RSAKEYSIZE/8; ++i)
-//        printf("%02hhx", e[i]);
-//    printf("\nd = ");
-//    for (i = 0; i < RSAKEYSIZE/8; ++i)
-//        printf("%02hhx", d[i]);
-//    printf("\nn = ");
-//    for (i = 0; i < RSAKEYSIZE/8; ++i)
-//        printf("%02hhx", n[i]);
-//    printf("\n---\n");
-
-    mpz_t e, d, n;
-
-// mpz_t 타입 변수 초기화
-    mpz_init(e);
-    mpz_init(d);
-    mpz_init(n);
-
-    // 16진수 문자열을 mpz_t 타입으로 설정 (GMP 라이브러리 사용)
-    mpz_set_str(e, "0298c1838a337b4adb8ffce087ee748dd284e41fbcf655698bc803e63d86c9fa2aa0863c090a408ea7d612851946acc99f359f3b959e34fa2a6e37d89cc869e32547b5d9a4f2e0d4a6a5be8de889aad703374aa0a454fe2bad307c2f3fab17c7ed961e3e30a852a59c3396fe66ab54135b555c787fe5ec35210157ac17d0a385", 16);
-    mpz_set_str(d, "01e356b87636214fc4c3f30ad7aea29d305db8143882ceb9e8521e43513cab6c8d2065d9b38612962ed1c129a90952893a9a07c9afd232975283e9808adc7a4aa39e9f66747f614e84355b229c35ad9163f2003f3b211ac46986f52cb268e6bde3a48f938b0220b0424c42df42a6335c94ad39341d4336f6232cb7d40e3aa2cd", 16);
-    mpz_set_str(n, "8d22c4b32917767565ead7c088133ba6b876a945fcd2b0db6b74ca53885ea919ce4f7b41e40a43d743fa033617bd42be67a7b9ee955a64496b7cd2e648d51d6a7f8cb204178f6f1e9c6e65a14b4302c0099347d6ef5ad414b77c9389d4118796b690784663b37089fd596f3fcf8ac43309bd3801ec1b593a574771dddc5d2fc1", 16);
+    rsa_generate_key(e, d, n, 1);
+    printf("e = ");
+    for (i = 0; i < RSAKEYSIZE/8; ++i)
+        printf("%02hhx", e[i]);
+    printf("\nd = ");
+    for (i = 0; i < RSAKEYSIZE/8; ++i)
+        printf("%02hhx", d[i]);
+    printf("\nn = ");
+    for (i = 0; i < RSAKEYSIZE/8; ++i)
+        printf("%02hhx", n[i]);
+    printf("\n---\n");
     
-    // 출력 확인
-    gmp_printf("e = %Zx\n", e);
-    gmp_printf("d = %Zx\n", d);
-    gmp_printf("n = %Zx\n", n);
-
     /*
      * <기본 암복호화 시험>
      * 문자열 "sample data"를 암복호화한다. 널문자를 포함하여 길이가 12바이트이다.
      */
-//    if ((val = rsaes_oaep_encrypt("sample data", 12, "", e, n, c, SHA512_224)) != 0) {
-//        printf("Encryption Error: %d -- FAILED\n", val);
-//       return 1;
-//    }
-//    printf("c = ");
-//   for (i = 0; i < RSAKEYSIZE/8; ++i)
-//        printf("%02hhx", c[i]);
-//    printf("\n");
-//    if ((val = rsaes_oaep_encrypt("sample data", 12, "", e, n, s, SHA512_224)) != 0) {
-//        printf("Encryption Error: %d -- FAILED\n", val);
-//        return 1;
-//    }
-//    if (memcmp(c, s, RSAKEYSIZE/8) == 0) {
-//        printf("Seed may not be random -- FAILED\n");
-//        return 1;
-//    }        
-//    if ((val = rsaes_oaep_decrypt(m, &len, "", d, n, c, SHA512_224)) != 0) {
-//       printf("Decryption Error: %d -- FAILED\n", val);
-//       return 1;
-//    }
-//    printf("m = ");
-//    for (i = 0; i < (int)len; ++i)
-//       printf("%02hhx", m[i]);
-//    if (len == 12)
-//        printf("\nmsg = %s, len = %zu -- PASSED\n---\n", m, len);
-//    else {
-//        printf("\nmsg = %s, len = %zu -- FAILED\n", m, len);
-//        return 1;
-//    }
-    
-    printf("------------------------------------");
-    if ((val = rsaes_oaep_encrypt("sample", 6, "", e, n, c, SHA224)) != 0) {
+    if ((val = rsaes_oaep_encrypt("sample data", 12, "", e, n, c, SHA512_224)) != 0) {
         printf("Encryption Error: %d -- FAILED\n", val);
-       return 1;
+        return 1;
     }
     printf("c = ");
-   for (i = 0; i < RSAKEYSIZE/8; ++i)
+    for (i = 0; i < RSAKEYSIZE/8; ++i)
         printf("%02hhx", c[i]);
     printf("\n");
-    if ((val = rsaes_oaep_encrypt("sample", 6, "", e, n, s, SHA224)) != 0) {
+    if ((val = rsaes_oaep_encrypt("sample data", 12, "", e, n, s, SHA512_224)) != 0) {
         printf("Encryption Error: %d -- FAILED\n", val);
         return 1;
     }
@@ -121,13 +72,13 @@ int main(void)
         printf("Seed may not be random -- FAILED\n");
         return 1;
     }        
-    if ((val = rsaes_oaep_decrypt(m, &len, "", d, n, c, SHA224)) != 0) {
-       printf("Decryption Error: %d -- FAILED\n", val);
-       return 1;
+    if ((val = rsaes_oaep_decrypt(m, &len, "", d, n, c, SHA512_224)) != 0) {
+        printf("Decryption Error: %d -- FAILED\n", val);
+        return 1;
     }
     printf("m = ");
     for (i = 0; i < (int)len; ++i)
-       printf("%02hhx", m[i]);
+        printf("%02hhx", m[i]);
     if (len == 12)
         printf("\nmsg = %s, len = %zu -- PASSED\n---\n", m, len);
     else {
