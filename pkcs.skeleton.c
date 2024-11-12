@@ -265,7 +265,7 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     //    return NULL;
 
     // 해시 계산 횟수 -> count = ceil(mLen / hLen)
-    uint32_t count = (mLen + hLen -1) / hLen - 1; 
+    uint32_t count = (mLen + hLen -1) / hLen; 
     
     // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
     unsigned char mgfTemp[sLen + 4];
@@ -283,21 +283,6 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     // temp 배열의 앞에서 mLen 만큼 복사해서 마스크 값 생성
     memcpy(m, temp, mLen);
     return m;
-}
-
-/*
- * SHA-2 해시 길이 설정 함수
- */ 
-size_t get_sha2_digest_size(int sha2_ndx) {
-    switch (sha2_ndx) {
-        case SHA224: return SHA224_DIGEST_SIZE;
-        case SHA256: return SHA256_DIGEST_SIZE;
-        case SHA384: return SHA384_DIGEST_SIZE;
-        case SHA512: return SHA512_DIGEST_SIZE;
-        case SHA512_224: return SHA224_DIGEST_SIZE;
-        case SHA512_256: return SHA256_DIGEST_SIZE;
-        default: return PKCS_INVALID_PD2; // 유효하지 않은 Hash의 경우 오류 반환
-    }
 }
 
 /*
