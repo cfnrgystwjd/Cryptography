@@ -541,59 +541,86 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
  */
 int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, const void *s, int sha2_ndx)
 {
+    // 해시 및 키 크기 계산
     size_t hLen = get_sha2_digest_size(sha2_ndx);
-    const size_t k = RSAKEYSIZE / 8;
-    size_t dbLen = k - hLen - 1;
-    unsigned char mHash[hLen]; // Hash된 m 값 
-    unsigned char maskedDb[dbLen];
-    unsigned char dbMask[dbLen];
-    unsigned char db[dbLen];
-    unsigned char dbPad[dbLen - hLen];
-    unsigned char salt[hLen];  // Salt 값
-    unsigned char m_prime[8 + hLen + hLen]; // M' = 0x00...0 || mHash || salt
-    unsigned char h[hLen]; // Hash된 M' 값 
-    unsigned char h_prime[hLen];
-    unsigned char em[k]; // Encoded message 값
+    size_t emLen = RSAKEYSIZE / 8;
+    size_t dbLen = emLen - hLen - 1;
+    size_t m_primeLen = hLen * 2 + 8;
 
-    if(mLen>0x1fffffffffffffff){
+    // 변수 선언
+    unsigned char mHash[hLen]; // 해시된 m 값
+    unsigned char em[emLen]; // 서명된 메시지 복사본
+    unsigned char maskedDb[dbLen]; // EM에서 마스크된 DB 추출
+    unsigned char h[hLen]; // EM에서 추출한 H
+    unsigned char dbMask[dbLen]; // MGF로 생성한 dbMask
+    unsigned char db[dbLen]; // maskedDb와 dbMask를 XOR하여 얻은 DB
+    unsigned char salt[hLen]; // 추출된 salt 값
+    unsigned char m_prime[m_primeLen]; // M' 값
+    unsigned char hashPrime[hLen]; // M'을 해시한 H'
+
+    // 1. 메시지 길이 확인
+    if (mLen > 0x1fffffffffffffff) {
         return PKCS_MSG_TOO_LONG;
     }
 
-    memcpy(em, s, k);
-    rsa_cipher((void *)em, e, n);
+    // 2. 메시지 해싱
+    if (choose_sha2(m, mLen, mHash, sha2_ndx) != 0) {
+        return PKCS_HASH_TOO_LONG;
+    }
 
-    if(em[k-1] != 0xbc){
+    // 3. EM 복사 및 RSA 검증
+    memcpy(em, s, emLen);
+    if (rsa_cipher((void *)em, e, n) != 0) {
+        return PKCS_VERIFICATION_FAIL;
+    }
+
+    // 4. 마지막 바이트 검사
+    if (em[emLen - 1] != 0xbc) {
         return PKCS_INVALID_LAST;
     }
 
-    memcpy(maskedDb,em, dbLen);
-    memcpy(h, em+dbLen, hLen);
+    // 5. maskedDB 추출
+    memcpy(maskedDb, em, dbLen);
 
-    if((em[0]>>7) != 0){
+    // 6. H 추출
+    memcpy(h, em + dbLen, hLen);
+
+    // 7. EM의 첫 비트 확인
+    if ((em[0] >> 7) != 0) {
         return PKCS_INVALID_INIT;
     }
 
+    // 8. dbMask 생성
     mgf1(h, hLen, dbMask, dbLen, sha2_ndx);
 
-    for(int i=0; i<dbLen; i++){
-        db[i] = maskedDb[i]^dbMask[i];
+    // 9. maskedDB와 dbMask를 XOR하여 DB 복원
+    for (size_t i = 0; i < dbLen; i++) {
+        db[i] = maskedDb[i] ^ dbMask[i];
     }
 
-    memcpy(dbPad, db, dbLen - hLen);
-
-    if(dbPad[dbLen - hLen - 1] != 0x01){
+    // 10. DB 패딩 확인 (앞쪽이 0x00으로 패딩되고 마지막은 0x01이어야 함)
+    size_t padLen = dbLen - hLen;
+    if (db[padLen - 1] != 0x01) {
         return PKCS_INVALID_PD2;
     }
 
-    memcpy(salt, db + dbLen - hLen, hLen);
+    // 11. salt 추출
+    memcpy(salt, db + padLen, hLen);
+
+    // 12. M' 생성 (M' = 0x00...00 || mHash || salt)
     memset(m_prime, 0x00, 8);
     memcpy(m_prime + 8, mHash, hLen);
     memcpy(m_prime + 8 + hLen, salt, hLen);
 
-    choose_sha2(m_prime, hLen + hLen + 8, h_prime, sha2_ndx);
+    // 13. M' 해싱하여 H' 계산
+    if (choose_sha2(m_prime, m_primeLen, hashPrime, sha2_ndx) != 0) {
+        return PKCS_HASH_TOO_LONG;
+    }
 
-    if(memcmp(h_prime, h, hLen) != 0){
+    // 14. H와 H' 비교
+    if (memcmp(hashPrime, h, hLen) != 0) {
         return PKCS_HASH_MISMATCH;
     }
-    return 0;
+
+    return 0; // 검증 성공
 }
