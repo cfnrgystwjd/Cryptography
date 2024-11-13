@@ -234,31 +234,8 @@ size_t get_sha2_digest_size(int sha2_ndx) {
  */
 unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, size_t mLen, int sha2_ndx)
 {
-    size_t hLen; // 해시 함수 출력 길이
-
     // 해시 값에 따른 해시 길이 설정
-    switch(sha2_ndx){
-        case SHA224: 
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        case SHA384:
-            hLen = SHA384_DIGEST_SIZE;
-            break;
-        case SHA512:
-            hLen = SHA512_DIGEST_SIZE;
-            break;
-        case SHA512_224:
-            hLen = SHA224_DIGEST_SIZE;
-            break;
-        case SHA512_256:
-            hLen = SHA256_DIGEST_SIZE;
-            break;
-        default:
-            return NULL;
-    }
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
 
     // 최대 마스크 길이 확인
     //if(mLen > (0xFFFFFFFF * hLen))
@@ -498,13 +475,18 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     unsigned char em[RSAKEYSIZE / 8]; // Encoded message 값
     size_t emLen = sizeof(em); // hLen은 해시 함수의 출력 길이, emLen은 최종적으로 서명된 메시지 길이 
 
+    // mLen이 RSA키 크기보다 큰지 확인 
+    if (mLen > emLen - hLen - 1) {
+        return PKCS_MSG_TOO_LONG; // 메시지가 너무 긴 경우 오류 반환
+    }
+
     // 1. 메시지 해싱 
     if (choose_sha2(m, mLen, mHash, sha2_ndx) != 0) {
         return PKCS_HASH_TOO_LONG; // Hash가 너무 긴 경우 오류 반환 
     }
 
     // 2. 무작위로 salt 값 생성 
-    arc4random_buf(salt, hLen); // 해시 길이만큼 salt 초기화
+    arc4random_buf(salt, hLen); // 해시 길이만큼 salt 초기화 
 
     // 3. M' 생성: M' = 0x00...00 || mHash || salt
     memset(m_prime, 0x00, 8); // 첫 8바이트 0x00 패딩
@@ -525,6 +507,7 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     // 6. h를 mgf1을 이용해 db에 XOR하여 maskedDB 생성
     unsigned char mgf_out[emLen - hLen - 1];
     mgf1(h, hLen, mgf_out, emLen - hLen - 1, sha2_ndx);
+
     for (size_t i = 0; i < emLen - hLen - 1; i++) {
         db[i] ^= mgf_out[i];
     }
@@ -538,9 +521,12 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     em[0] &= 0x7F;
 
     // 9. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
-    if (rsa_cipher(s, em, d) != 0) {
+    if (rsa_cipher(em, d, n) != 0) {
+        printf("rsa_cipher error\n");
         return PKCS_MSG_OUT_OF_RANGE; // 암호화 실패 시, 오류 반환 
     }
+
+    memcpy(s, em, RSAKEYSIZE / 8);
 
     return 0; 
 }
