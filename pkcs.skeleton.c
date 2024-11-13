@@ -571,10 +571,17 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
     em[0] &= 0x7F;
 
     // 9. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
-    if (rsa_cipher(s, em, d) != 0) {
+    if (rsa_cipher(em, d, n) != 0) {
         printf("rsa_cipher error\n");
         return PKCS_MSG_OUT_OF_RANGE; // 암호화 실패 시, 오류 반환 
     }
+
+    memcpy(s, em, RSAKEYSIZE / 8);
+
+    // // DEBUG: 서명 출력
+    // printf("DEBUG: signature = ");
+    // for (size_t i = 0; i < emLen; i++) printf("%02x", ((unsigned char*)s)[i]);
+    // printf("\n");
 
     return 0; 
 }
