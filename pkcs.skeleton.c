@@ -568,11 +568,9 @@ int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, 
         return PKCS_HASH_TOO_LONG;
     }
 
-    // 3. EM 복사 및 RSA 검증
+    // 3. EM 복사 및 RSA 검증z
     memcpy(em, s, emLen);
-    if (rsa_cipher((void *)em, e, n) != 0) {
-        return PKCS_VERIFICATION_FAIL;
-    }
+    rsa_cipher((void *)em, e, n);
 
     // 4. 마지막 바이트 검사
     if (em[emLen - 1] != 0xbc) {
