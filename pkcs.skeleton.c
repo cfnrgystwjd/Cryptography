@@ -45,6 +45,9 @@
  * 
  * 3차 수정일: 2024.11.12 화요일
  * 3차 수정 내용: i2osp, mgf1 수정
+ * 
+ * 4차 수정일: 2024.11.13 수요일
+ * 4차 수정 내용: rsassa_pss_verify 수정
  */
 
 #ifdef __linux__
@@ -538,4 +541,59 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
  */
 int rsassa_pss_verify(const void *m, size_t mLen, const void *e, const void *n, const void *s, int sha2_ndx)
 {
+    size_t hLen = get_sha2_digest_size(sha2_ndx);
+    const size_t k = RSAKEYSIZE / 8;
+    size_t dbLen = k - hLen - 1;
+    unsigned char mHash[hLen]; // Hash된 m 값 
+    unsigned char maskedDb[dbLen];
+    unsigned char dbMask[dbLen];
+    unsigned char db[dbLen];
+    unsigned char dbPad[dbLen - hLen];
+    unsigned char salt[hLen];  // Salt 값
+    unsigned char m_prime[8 + hLen + hLen]; // M' = 0x00...0 || mHash || salt
+    unsigned char h[hLen]; // Hash된 M' 값 
+    unsigned char h_prime[hLen];
+    unsigned char em[k]; // Encoded message 값
+
+    if(mLen>0x1fffffffffffffff){
+        return PKCS_MSG_TOO_LONG;
+    }
+
+    memcpy(em, s, k);
+    rsa_cipher((void *)em, e, n);
+
+    if(em[k-1] != 0xbc){
+        return PKCS_INVALID_LAST;
+    }
+
+    memcpy(maskedDb,em, dbLen);
+    memcpy(h, em+dbLen, hLen);
+
+    if((em[0]>>7) != 0){
+        return PKCS_INVALID_INIT;
+    }
+
+    mgf1(h, hLen, dbMask, dbLen, sha2_ndx);
+
+    for(int i=0; i<dbLen; i++){
+        db[i] = maskedDb[i]^dbMask[i];
+    }
+
+    memcpy(dbPad, db, dbLen - hLen);
+
+    if(dbPad[dbLen - hLen - 1] != 0x01){
+        return PKCS_INVALID_PD2;
+    }
+
+    memcpy(salt, db + dbLen - hLen, hLen);
+    memset(m_prime, 0x00, 8);
+    memcpy(m_prime + 8, mHash, hLen);
+    memcpy(m_prime + 8 + hLen, salt, hLen);
+
+    choose_sha2(m_prime, hLen + hLen + 8, h_prime, sha2_ndx);
+
+    if(memcmp(h_prime, h, hLen) != 0){
+        return PKCS_HASH_MISMATCH;
+    }
+    return 0;
 }
