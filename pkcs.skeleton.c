@@ -20,7 +20,7 @@
  * 3차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 5) 및 디버깅 코드 삽입
  *
  * 4차 수정일: 2024.11.12.화요일
- * 4차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 4)
+ * 4차 수정 내용: rsaes_oaep_decrypt 오류 수정 (Error code: 4, 5, 6)
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -61,7 +61,6 @@
 #include <gmp.h>
 #include "pkcs.h"
 #include "sha2.h"
-#include <stdio.h>
 
 /*
  * rsa_generate_key() - generates RSA keys e, d and n in octet strings.
@@ -244,7 +243,7 @@ unsigned char *mgf1(const unsigned char *mgfS, size_t sLen, unsigned char *m, si
     //if(mLen > (0xFFFFFFFF * hLen))
     //    return NULL;
 
-    // 해시 계산 횟수 -> count = ceil(mLen / hLen)
+    // 해시 계산 횟수 -> count = ceil(mLen / hLen) - 1
     uint32_t count = (mLen + hLen -1) / hLen; 
     
     // mgfTemp: 시드와 카운트를 담을 배열, temp: 해시 결과 저장 배열
@@ -525,7 +524,6 @@ int rsassa_pss_sign(const void *m, size_t mLen, const void *d, const void *n, vo
 
     // 9. RSA 서명: 인코딩된 em 메시지를 RSA 개인키로 암호화하여 서명 생성 
     if (rsa_cipher(em, d, n) != 0) {
-        printf("rsa_cipher error\n");
         return PKCS_MSG_OUT_OF_RANGE; // 암호화 실패 시, 오류 반환 
     }
 
