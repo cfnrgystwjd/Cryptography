@@ -286,8 +286,11 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 반환
 	}
 
+	// DataBlock의 길이 상수 선언
+	// DB의 길이 = 전체 길이 k에서 masekedSeed의 길이 hLen과 맨 앞 0x00 바이트(1바이트)를 뺀 값.
+	const size_t dbLen = k - hLen - 1;
 	// message 길이 검증
-	if (mLen > k - 2 * hLen - 2) return PKCS_MSG_TOO_LONG;
+	if (mLen > dbLen - hLen - 1) return PKCS_MSG_TOO_LONG;
 
 	// label을 hash하여 저장할 변수 선언
 	unsigned char lHash[hLen];
@@ -296,12 +299,12 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	choose_sha2(label, labelLen, lHash, sha2_ndx);
 	
 	// padding string(PS) 생성
-	const size_t psLen = k - 2 * hLen - mLen - 2;
+	// padding string의 길이 = DataBlock 길이에서 hash된 label의 길이와 메시지 m의 길이, Padding String 구분자 0x01(1바이트)를 뺀 값.
+	const size_t psLen = dbLen - hLen - mLen - 1;
 	unsigned char paddingStr[psLen];
 	memset(paddingStr, 0, psLen);
 
 	// Data Block 구성
-	const size_t dbLen = k - hLen - 1;
 	unsigned char dataBlock[dbLen];
 
 	// dataBlock에 lHash, paddingStr, 0x01, m 순서대로 복사
