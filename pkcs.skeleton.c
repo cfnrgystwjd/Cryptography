@@ -381,8 +381,8 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 		if (labelLen > MAX_LABEL_LENGTH) return PKCS_LABEL_TOO_LONG; // label의 길이가 최대 hash 값을 넘어서면 오류 반환
 	}
 
-	// hash function에 따른 label의 길이 검증을 위해 hLen부터 결정.
-    size_t hLen = get_sha2_digest_size(sha2_ndx);
+	// label의 길이를 hash하면 사용한 hash function의 길이와 일치하므로, hash function의 길이 상수 선언.
+    const size_t hLen = get_sha2_digest_size(sha2_ndx);
 	
 	// label에 대한 hash 진행. (추후 복원된 DB에서 추출한 lHash와 비교를 위함.)
 	unsigned char labelHash[hLen];
