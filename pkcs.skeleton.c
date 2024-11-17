@@ -327,7 +327,7 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
 
 	// DB와 dbMask XOR 연산 진행하여 DB에 저장 (Masked DB 도출)
-	for (int i = 0; i < dbLen; i++) {
+	for (size_t i = 0; i < dbLen; i++) {
 		dataBlock[i] ^= dbMask[i];
 	}
 
@@ -336,12 +336,12 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	mgf1(dataBlock, dbLen, seedMask, hLen, sha2_ndx);
 
 	// seed와 seedMask XOR 연산 진행하기
-	for (int i = 0; i < hLen; i++) {
+	for (size_t i = 0; i < hLen; i++) {
 		seed[i] ^= seedMask[i];
 	}
 
 	// Encoded Message 구성
-	unsigned char EM[RSAKEYSIZE / 8];
+	unsigned char EM[k];
 	offset = 0;
 	EM[offset] = 0x00;
 	offset += 1;
@@ -354,7 +354,7 @@ int rsaes_oaep_encrypt(const void *m, size_t mLen, const void *label, const void
 	if (rsa_cipher(EM, e, n) != 0) return PKCS_MSG_OUT_OF_RANGE;
 
 	// 암호화된 결과 EM을 c에 복사
-	memcpy(c, EM, RSAKEYSIZE / 8);
+	memcpy(c, EM, k);
 	
 	// 성공적으로 암호화가 완료됐다면 return 0;
 	return 0;
@@ -416,7 +416,7 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 	mgf1(maskedDB, dbLen, seedMask, hLen, sha2_ndx);
 	// maskedSeed와 seedMask를 XOR 연산하여 seed를 얻음.
 	unsigned char seed[hLen];
-	for (int i = 0; i < hLen; i++) {
+	for (size_t i = 0; i < hLen; i++) {
 		seed[i] = maskedSeed[i] ^ seedMask[i];
 	}
 
@@ -429,7 +429,7 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 	mgf1(seed, hLen, dbMask, dbLen, sha2_ndx);
 	// dbMask와 maskedDB를 XOR 연산하여 DB를 얻음.
 	unsigned char dataBlock[dbLen];
-	for (int i = 0; i < dbLen; i++) {
+	for (size_t i = 0; i < dbLen; i++) {
 		dataBlock[i] = maskedDB[i] ^ dbMask[i];
 	}
 
@@ -439,7 +439,7 @@ int rsaes_oaep_decrypt(void *m, size_t *mLen, const void *label, const void *d, 
 	memcpy(lHash, dataBlock + offset, hLen);
 	offset += hLen;
 
-	for (int i = 0; i < hLen; i++) {
+	for (size_t i = 0; i < hLen; i++) {
 		if (labelHash[i] != lHash[i]) return PKCS_HASH_MISMATCH;
 	}
 
