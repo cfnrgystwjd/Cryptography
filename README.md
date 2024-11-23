@@ -17,7 +17,7 @@ NIST FIPS 186-4에 명시된 **ECDSA (Elliptic Curve Digital Signature Algorithm
   - **차수 (Order, \( n \)):**  
     $$n = \text{FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551}$$  
   - \$$nG = O \$$:  
-    \$$ O \$$는 무한대 점 (항등원).  
+    $$O$$는 무한대 점 (항등원).  
 
 ### ECDSA  
 #### 주요 파라미터  
