@@ -10,8 +10,7 @@ NIST FIPS 186-4에 명시된 **ECDSA (Elliptic Curve Digital Signature Algorithm
 - 타원곡선 방정식:  
   $$y^2 = x^3 - 3x + b \ (\text{mod} \ p)$$  
 - **파라미터:**  
-  - \( p \):  
-    $$p = \text{FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF}$$  
+  - $$p = \text{FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF}$$  
   - **기저점 (Base Point, \( G \)):**  
     - \( G_x = \text{6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296} \)  
     - \( G_y = \text{4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5} \)  
