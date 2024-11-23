@@ -12,7 +12,7 @@ NIST FIPS 186-4에 명시된 **ECDSA (Elliptic Curve Digital Signature Algorithm
 - **파라미터:**  
   - $$p = \text{FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF}$$  
   - **기저점 (Base Point, \( G \)):**  
-    - \( G_x = \text{6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296} \)  
+    - $$\( G_x = \text{6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296} \)$$ 
     - \( G_y = \text{4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5} \)  
   - **차수 (Order, \( n \)):**  
     $$n = \text{FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551}$$  
