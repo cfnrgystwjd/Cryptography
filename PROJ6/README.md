@@ -1,5 +1,5 @@
 # Cryptography  
-**Team Project: Team#8_Project#5 & #6**  
+**Team Project: Team#8_Project#6**  
 
 ## 과제 목표  
 NIST FIPS 186-4에 명시된 **ECDSA (Elliptic Curve Digital Signature Algorithm)** 전자서명 기법을 타원곡선 **P-256** 상에서 구현  
