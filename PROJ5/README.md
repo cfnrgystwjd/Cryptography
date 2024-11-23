@@ -1,5 +1,5 @@
 # Cryptography
-cryptography team project_ team#8_project#5 & #6
+cryptography team project_ team#8_project#5
 
 ## 과제 목표
 IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
