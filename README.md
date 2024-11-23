@@ -1,40 +1,59 @@
-# Cryptography
-cryptography team project_ team#8_project#5 & #6
+# Cryptography  
+cryptography team project_ team#8_project#6  
 
-## 과제 목표
-IETF RFC 8017에 명시된 RSA 공개키 암호체계 PKCS#1 ver. 2.2 구현
+## 과제 목표  
+NIST FIPS 186-4에 명시된 **ECDSA (Elliptic Curve Digital Signature Algorithm)** 전자서명 기법을 타원곡선 **P-256** 상에서 구현  
 
-## 과제 배경 지식
-- **PKCS#1의 종류**
-  - **RSAES-OAEP**
-    - 암복호 알고리즘 (Encryption/decryption Scheme based on the Optimal Asymmetric Encryption Padding)
-  - **RSASSA-PSS**
-    - 확률적 전자서명 알고리즘 (Signature Scheme with Appendix based on the Probabilistic Signature Scheme)
+---
 
-## 과제 구현
-1. **RSAES-OAEP**: 암호화할 메시지 M을 EM으로 변환한 후, 공개키 (e, n)을 사용하여 $$EM^e$$ mod $$n$$ 계산
-   - Data Block은 Hash(Label) + 00 + 01 + Message로 구성됨.
-   - Hash function: 길이가 최소 224비트인 SHA-2 계열의 함수 사용
-   - 난수 Seed의 길이 = Hash function의 길이
-   - EM의 길이 = RSA의 길이 = 2048bit
-2. **RSASSA-PSS**: 서명할 메시지 M을 EM으로 변환한 후, 개인키 (d, n)을 사용하여 $$EM^d$$ mod $$n$$ 계산
-   - Hash function: 길이가 최소 224비트인 SHA-2 계열의 함수 사용
-   - 난수 salt의 길이 = Hash function 길이
-   - M'의 처음 8바이트는 0x00으로 채움
-   - PS는 길이에 맞춰서 0x00으로 채움
-   - TF = 0xBC (1바이트)
-   - mHash = Hash(M)
-   - H = Hash(M')
-   - EM의 길이 = RSA의 key의 길이 = 2048bit
-   - EM의 가장 왼쪽 비트(MSB, Most Significant Bit)가 1이면 강제로 0으로 바꿈
+## 과제 배경 지식  
+- **ECDSA의 주요 파라미터**
+  - **타원곡선 (Elliptic Curve) E**  
+    유한체 위에서 정의된 타원곡선  
+  - **q**  
+    충분히 큰 소수 (160비트 이상)  
+  - **기저점 (Base Point, G)**  
+    차수 \( q \)를 가지는 곡선 위의 한 점  
 
-## 과제 진행 전제
-64비트보다 큰 범위에서의 계산이 이루어지므로 GMP 라이브러리 설치 필요.
+---
+
+### 공개키와 개인키  
+1. **개인키 (d)**  
+   - 범위: \( [1, q-1] \)  
+   - 조건: \( d \neq 0 \)  
+2. **공개키 (Q)**  
+   - \( Q = dG \)  
+
+---
+
+### 서명 생성 (Signature Generation)  
+1. 메시지 \( m \)에 SHA-2 해시 적용: \( e = H(m) \)  
+   - \( e \)의 길이가 \( n \)보다 길면 잘라서 사용 (\( e \leq n \))  
+2. \( k \in (0, n) \)에서 무작위로 선택  
+3. \( (x_1, y_1) = kG \) 계산  
+4. \( r = x_1 \mod n \), \( r \neq 0 \)일 경우 진행  
+5. \( s = k^{-1}(e + rd) \mod n \), \( s \neq 0 \)일 경우 진행  
+6. 서명: \( (r, s) \)  
+
+---
+
+### 서명 검증 (Signature Verification)  
+1. \( r, s \in [1, n-1] \) 확인  
+2. \( e = H(m) \), 필요 시 길이 자르기  
+3. \( u_1 = es^{-1} \mod n \), \( u_2 = rs^{-1} \mod n \)  
+4. \( (x_1, y_1) = u_1G + u_2Q \)  
+   - \( (x_1, y_1) = O \)이면 서명 오류  
+5. \( r \equiv x_1 \ (\text{mod} \ n) \)일 경우 서명 일치  
+
+---
+
+## 과제 진행 전제  
+64비트 이상의 계산이 필요하므로 GMP 라이브러리 설치가 요구됩니다.  
 
 ```bash
 sudo apt update
 sudo apt install libgmp-dev
-```
+
 
 ## 과제 함수 프로토타입
 1. **rsa_generate_key**: 길이가 RSAKEYSIZE(2048)인 e, d, n 생성하는 함수
