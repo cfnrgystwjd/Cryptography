@@ -10,6 +10,9 @@
  * --------------------1---------------------
  * 학번: 2019060637
  * 이름: 추효정
+ * 
+ * 1차 수정일: 2024.11.26.화요일
+ * 1차 수정 내용: ecdsa_p256_sign() 함수 구현 및 주석 삽입
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -122,7 +125,7 @@ void ecdsa_point_add(mpz_t *Rx, mpz_t *Ry, const mpz_t *Px, const mpz_t *Py, con
     mpz_sub(temp, *Px, *Rx); // temp = Px - Rx
     mpz_mul(temp, lambda, temp); //temp *= Lambda
     mpz_sub(temp, temp, *Py); // temp -= Py
-    mpz_mod(*Ry, temp, p); Ry = temp mod p
+    mpz_mod(*Ry, temp, p); // Ry = temp mod p
 
     mpz_clears(lambda, temp, NULL);
 }
@@ -182,7 +185,7 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
         if(!first){
             ecdsa_point_double(Qx, Qy, Qx, Qy, NULL, p); // 점 두 배
         }
-        
+
         if(mpz_tstbit(k, i)){ // 현재 비트가 1이면 점 덧셈 수행
             if(first){
                 mpz_set(*Qx, Px);
@@ -193,7 +196,7 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
             }
         }
     }
-    mpz_clears(Px, Py, temp_x, temp_y, NULL);    
+    mpz_clears(Px, Py, temp_x, temp_y, NULL);
 }
 
 /*
@@ -269,6 +272,79 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
+    if (len > ECDSA_P256 / 8) return ECDSA_MSG_TOO_LONG;
+
+    // 사용하는 hash함수의 길이 저장
+    const size_t hlen = get_sha2_digest_size(sha2_ndx);
+    // e = H(m)
+    unsigned char e[hlen];
+    choose_sha2(msg, len, e, sha2_ndx);
+
+    // e의 길이가 n의 길이(256비트)보다 클 경우
+    if (hlen > ECDSA_P256 / 8) {
+        // 바이트 배열로 선언된 e를 mpz_t 타입으로 변환
+        mpz_t e_truncated;
+        mpz_init(e_truncated);
+        mpz_import(e_truncated, hlen, 1, 1, 1, 0, e);
+
+        // e_truncated를 자르기 위해서 mask 생성
+        mpz_t mask;
+        mpz_init(mask);
+        mpz_set_ui(mask, 0);
+        mpz_setbit(mask, ECDSA_P256);
+        mpz_sub_ui(mask, mask, 1);
+
+        mpz_and(e_truncated, e_truncated, mask);
+        mpz_clear(mask);
+
+        size_t e_len = 0;
+        mpz_export(e, &e_len, 1, 1, 1, 0, e_truncated);
+        mpz_clear(e_truncated);
+    }
+
+    mpz_t r, s;
+    mpz_inits(r, s, NULL);
+
+    do {
+        // k값 무작위 선택
+        mpz_t k;
+        mpz_init(k);
+        gmp_randstate_t state;
+        gmp_randinit_default(state);
+        mpz_urandomm(k, state, n); // 범위는 (0, n)
+
+        // (x1, y1) = kG
+        mpz_t x1, y1;
+        mpz_inits(x1, y1, NULL);
+        ecdsa_mul(k, G, &x1, &y1);
+
+        // r = x1 mod n
+        mpz_mod(r, x1, n);
+
+        mpz_t k_inverse;
+        mpz_init(k_inverse);
+        mpz_invert(k_inverse, k, n);
+
+        mpz_t tmp;
+        mpz_init(tmp);
+        // 바이트 배열로 저장된 d를 mpz_t로 변환
+        mpz_t d_mpz;
+        mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
+        // 바이트 배열로 저장된 e를 mpz_t로 변환
+        mpz_t e_mpz;
+        mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
+        // tmp = r * d
+        mpz_mul(tmp, r, d);
+        // tmp = e + r * d
+        mpz_add(tmp, e_mpz, tmp);
+        // s = k^(-1) * (e + r * d) = k^(-1) * tmp
+        mpz_mul(s, k_inverse, tmp);
+    } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
+
+    mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
+    mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
+
+    return 0;
 }
 
 /*
