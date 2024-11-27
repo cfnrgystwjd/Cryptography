@@ -33,6 +33,7 @@
 #include "sha2.h"
 #include <gmp.h>
 #include <stdbool.h>
+#include <string.h>
 
 mpz_t p, n; // 타원곡선의 소수 p와 차수 n
 ecdsa_p256_t G; // 기저점 G
@@ -122,7 +123,7 @@ void ecdsa_point_add(mpz_t *Rx, mpz_t *Ry, const mpz_t *Px, const mpz_t *Py, con
     mpz_sub(temp, *Px, *Rx); // temp = Px - Rx
     mpz_mul(temp, lambda, temp); //temp *= Lambda
     mpz_sub(temp, temp, *Py); // temp -= Py
-    mpz_mod(*Ry, temp, p); Ry = temp mod p
+    mpz_mod(*Ry, temp, p); // Ry = temp mod p
 
     mpz_clears(lambda, temp, NULL);
 }
@@ -172,6 +173,10 @@ void ecdsa_point_double(mpz_t *Rx, mpz_t *Ry, const mpz_t *Px, const mpz_t *Py, 
 void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
     mpz_t Px, Py;
     mpz_inits(Px, Py, NULL);
+	mpz_inits(*Qx, *Qy, NULL);
+
+	mpz_t a;
+	mpz_init_set_ui(a, 0);
 
     mpz_import(Px, sizeof(G.x), 1, 1, 1, 0, G.x); // G의 x 좌표
     mpz_import(Py, sizeof(G.y), 1, 1, 1, 0, G.y); // G의 y 좌표
@@ -180,9 +185,9 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
 
     for(int i = mpz_sizeinbase(k, 2)-1; i>=0; i--){ // k의 각 비트 처리
         if(!first){
-            ecdsa_point_double(Qx, Qy, Qx, Qy, NULL, p); // 점 두 배
+            ecdsa_point_double(Qx, Qy, Qx, Qy, a, p); // 점 두 배
         }
-        
+
         if(mpz_tstbit(k, i)){ // 현재 비트가 1이면 점 덧셈 수행
             if(first){
                 mpz_set(*Qx, Px);
@@ -193,7 +198,8 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
             }
         }
     }
-    mpz_clears(Px, Py, temp_x, temp_y, NULL);    
+	mpz_clear(a);
+    mpz_clears(Px, Py, NULL);
 }
 
 /*
@@ -211,8 +217,8 @@ void ecdsa_p256_init(void)
     mpz_set_str(Gx, "6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296", 16);
     mpz_set_str(Gy, "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5", 16);
 
-    mpz_export(G.x, NULL, 1, ECDSA_P256 / 8, 0, Gx);
-    mpz_export(G.y, NULL, 1, ECDSA_P256 / 8, 0, Gy);
+    mpz_export(G.x, NULL, 1, ECDSA_P256 / 8, 1, 0, Gx);
+    mpz_export(G.y, NULL, 1, ECDSA_P256 / 8, 1, 0, Gy);
 
     mpz_clears(Gx, Gy, NULL);
 }
@@ -239,25 +245,34 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
     // 난수 생성기 초기화
     gmp_randstate_t state;
     gmp_randinit_default(state);
+
     // 난수 생성기로 개인키 d 생성
     gmp_randseed_ui(state, arc4random());
-    gmp_urandomm(private_key, state, n);
+    mpz_urandomm(private_key, state, n);
 
-    // G의 좌표 임시 변수 temp에 복사
-    ecdsa_p256_t temp;
-    memset(Q->x, 0, ECDSA_P256 / 8);
-    memset(Q->y, 0, ECDSA_P256 / 8);
-    memcpy(&temp.x, &G.x, ECDSA_P256 / 8);
-    memcpy(&temp.y, &G.y, ECDSA_P256 / 8);
-    // dG 계산하여 Q 생성
-    ecdsa_mul(&temp, private_key, Q);
+	// G
+	mpz_t Gx, Gy, Qx, Qy;
+	mpz_inits(Gx, Gy, *Qx, *Qy, NULL);
 
-    //개인키 저장 (mpz_t 형식의 d를 바이트 배열로 변환해 저장)
-    mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+	// G mpz_t
+	mpz_import(Gx, sizeof(G.x), 1, 1, 1, 0, G.x);
+	mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y);
+	
+	// Q
+	ecdsa_mul(private_key, G, &Qx, &Qy);
 
-    // 공간 반납
-    gmp_randclear(state);
-    mpz_clear(private_key);
+	//Q
+	memset(Q->x, 0, ECDSA_P256 / 8);
+	memset(Q->y, 0, ECDSA_P256 / 8);
+	mpz_export(Q->x, NULL, 1, ECDSA_P256 / 8, 1, 0, Qx);
+	mpz_export(Q->y, NULL, 1, ECDSA_P256 / 8, 1, 0, Qy);
+
+	//private
+	mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+
+	// every
+	mpz_clears(private_key, Gx, Gy, Qx, Qy, NULL);
+	gmp_randclear(state);
 }
 
 /*
@@ -269,6 +284,79 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
+    if (len > ECDSA_P256 / 8) return ECDSA_MSG_TOO_LONG;
+
+    // 사용하는 hash함수의 길이 저장
+    const size_t hlen = get_sha2_digest_size(sha2_ndx);
+    // e = H(m)
+    unsigned char e[hlen];
+    choose_sha2(msg, len, e, sha2_ndx);
+
+    // e의 길이가 n의 길이(256비트)보다 클 경우
+    if (hlen > ECDSA_P256 / 8) {
+        // 바이트 배열로 선언된 e를 mpz_t 타입으로 변환
+        mpz_t e_truncated;
+        mpz_init(e_truncated);
+        mpz_import(e_truncated, hlen, 1, 1, 1, 0, e);
+
+        // e_truncated를 자르기 위해서 mask 생성
+        mpz_t mask;
+        mpz_init(mask);
+        mpz_set_ui(mask, 0);
+        mpz_setbit(mask, ECDSA_P256);
+        mpz_sub_ui(mask, mask, 1);
+
+        mpz_and(e_truncated, e_truncated, mask);
+        mpz_clear(mask);
+
+        size_t e_len = 0;
+        mpz_export(e, &e_len, 1, 1, 1, 0, e_truncated);
+        mpz_clear(e_truncated);
+    }
+
+    mpz_t r, s;
+    mpz_inits(r, s, NULL);
+
+    do {
+        // k값 무작위 선택
+        mpz_t k;
+        mpz_init(k);
+        gmp_randstate_t state;
+        gmp_randinit_default(state);
+        mpz_urandomm(k, state, n); // 범위는 (0, n)
+
+        // (x1, y1) = kG
+        mpz_t x1, y1;
+        mpz_inits(x1, y1, NULL);
+        ecdsa_mul(k, G, &x1, &y1);
+
+        // r = x1 mod n
+        mpz_mod(r, x1, n);
+
+        mpz_t k_inverse;
+        mpz_init(k_inverse);
+        mpz_invert(k_inverse, k, n);
+
+        mpz_t tmp;
+        mpz_init(tmp);
+        // 바이트 배열로 저장된 d를 mpz_t로 변환
+        mpz_t d_mpz;
+        mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
+        // 바이트 배열로 저장된 e를 mpz_t로 변환
+        mpz_t e_mpz;
+        mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
+        // tmp = r * d
+        mpz_mul(tmp, r, d);
+        // tmp = e + r * d
+        mpz_add(tmp, e_mpz, tmp);
+        // s = k^(-1) * (e + r * d) = k^(-1) * tmp
+        mpz_mul(s, k_inverse, tmp);
+    } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
+
+    mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
+    mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
+
+    return 0;
 }
 
 /*
