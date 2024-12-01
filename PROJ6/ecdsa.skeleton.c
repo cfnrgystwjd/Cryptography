@@ -371,7 +371,7 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
  */
 int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const void *_r, const void *_s, int sha2_ndx)
 {
-    // 1. r, s 범위 검증 => r과 s는 (0, n) 범위 내에 있어야 함 
+    // 1. r, s 범위 검증 => r과 s는 (1, n-1) 범위 내에 있어야 함 
     mpz_t r, s;
     mpz_inits(r, s, NULL);
     mpz_import(r, ECDSA_P256 / 8, 1, 1, 1, 0, _r);
@@ -386,11 +386,13 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     // 2. 메시지 Hash 계산 => e = H(msg)
     const size_t hlen = get_sha2_digest_size(sha2_ndx);
     unsigned char e[hlen];
-    choose_sha2(msg, len, e, sha2_ndx);
+    if(choose_sha2(msg, len, e, sha2_ndx) != 0) {
+        return ECDSA_SIG_INVALID;
+    }
 
-    // 3. Hash 값이 n보다 클 경우
+    // 3. Hash 값 e가 n보다 클 경우
     if (hlen > ECDSA_P256 / 8) {
-        mpz_t e_truncated;
+        mpz_t e_truncated; // 크기 조정된 e 
         mpz_init(e_truncated);
         mpz_import(e_truncated, hlen, 1, 1, 1, 0, e);
 
@@ -406,7 +408,7 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     }
 
     // 4. s 역원인 w 계산 => w = 1/s mod n
-    mpz_t w;
+    mpz_t w; // s의 역원
     mpz_init(w);
     if (!mpz_invert(w, s, n)) { // s와 n이 서로소가 아닌 경우, 오류 반환
         mpz_clears(r, s, w, NULL);
@@ -423,9 +425,31 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     mpz_mod(u2, u2, n);
 
     // 6. 점(x1, y1) 계산 => (x1, y1) = u1 * G + u2 * Q
-    mpz_t x1, y1;
-    mpz_inits(x1, y1, NULL);
-    ecdsa_point_mul_add(u1, G, u2, Q, &x1, &y1); // 타원 곡선 연산
+    mpz_t qx, qy, x1, y1; // 공개키 Q의 x, y & 최종 계산 결과 x1, y1
+    mpz_inits(qx, qy, x1, y1, NULL);
+    
+    // 공개키 Q의 x, y 좌표를 mpz_t로 변환 
+    mpz_import(qx, sizeof(_Q->x), 1, 1, 1, 0, _Q->x);
+    mpz_import(qy, sizeof(_Q->y), 1, 1, 1, 0, _Q->y);
+
+    // u1 * G 
+    mpz_t u1G_x, u1G_y;
+    mpz_inits(u1G_x, u1G_y, NULL);
+    ecdsa_mul(u1, G, &u1G_x, &u1G_y);
+
+    // u2 * Q
+    mpz_t u2Q_x, u2Q_y;
+    mpz_inits(u2Q_x, u2Q_y, NULL);
+    ecdsa_mul(u2, *_Q, &u2Q_x, &u2Q_y);
+
+    // u1 * G + u2 * Q
+    ecdsa_point_add(&x1, &y1, &u1G_x, &u1G_y, &u2Q_x, &u2Q_y, p);
+
+    // 7. 점이 무한점인지 확인
+    if (mpz_cmp_ui(x1, 0) == 0 && mpz_cmp_ui(y1, 0) == 0) {
+        mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, NULL);
+        return ECDSA_SIG_INVALID;
+    }
 
     // 7. x1 mod n = r 검증
     mpz_mod(x1, x1, n);
@@ -434,7 +458,7 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
         return ECDSA_SIG_MISMATCH;
     }
 
-    mpz_clears(r, s, w, u1, u2, x1, y1, e_mpz, NULL);
+    mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, e_mpz, NULL);
 
     return 0;
 }
