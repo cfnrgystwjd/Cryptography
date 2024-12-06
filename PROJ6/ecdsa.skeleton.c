@@ -10,6 +10,15 @@
  * --------------------1---------------------
  * 학번: 2019060637
  * 이름: 추효정
+ * 
+ * 1차 수정일: 2024.11.26.화요일
+ * 1차 수정 내용: ecdsa_sign() 함수 구현 및 주석 삽입, 테스트 시 발생한 컴파일 오류 팀원 보고
+ *
+ * 2차 수정일: 2024.11.28.목요일
+ * 2차 수정 내용: Segmentation fault 발생지 탐색 및 오류 해결을 위한 코드 수정
+ *
+ * 3차 수정일: 2024.12.01.일요일
+ * 3차 수정 내용: ecdsa_sign() 함수에서 발생한 ECDSA_MSG_TOO_LONG(오류 코드 1) 에러 해결
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -284,7 +293,8 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
-    if (len > ECDSA_P256 / 8) return ECDSA_MSG_TOO_LONG;
+	const size_t MAX_MSG_LEN = (1ULL << 64) - 1;
+    if (len > MAX_MSG_LEN) return ECDSA_MSG_TOO_LONG;
 
     // 사용하는 hash함수의 길이 저장
     const size_t hlen = get_sha2_digest_size(sha2_ndx);
