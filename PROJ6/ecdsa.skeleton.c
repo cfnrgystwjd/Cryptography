@@ -12,13 +12,16 @@
  * 이름: 추효정
  * 
  * 1차 수정일: 2024.11.26.화요일
- * 1차 수정 내용: ecdsa_sign() 함수 구현 및 주석 삽입, 테스트 시 발생한 컴파일 오류 팀원 보고
+ * 1차 수정 내용: ecdsa_p256_sign() 함수 구현 및 주석 삽입, 테스트 시 발생한 컴파일 오류 팀원 보고
  *
  * 2차 수정일: 2024.11.28.목요일
  * 2차 수정 내용: Segmentation fault 발생지 탐색 및 오류 해결을 위한 코드 수정
  *
  * 3차 수정일: 2024.12.01.일요일
- * 3차 수정 내용: ecdsa_sign() 함수에서 발생한 ECDSA_MSG_TOO_LONG(오류 코드 1) 에러 해결
+ * 3차 수정 내용: ecdsa_p256_sign() 함수에서 발생한 ECDSA_MSG_TOO_LONG(오류 코드 1) 에러 해결
+ * 
+ * 4차 수정일: 2024.12.06.금요일
+ * 4차 수정 내용: ecdsa_p256_sign() 함수에서 발생한 Segmentation fault, MP: Cannot allocate memory, k may not be random 에러 해결
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -53,6 +56,7 @@
 #include <gmp.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 mpz_t p, n; // 타원곡선의 소수 p와 차수 n
 ecdsa_p256_t G; // 기저점 G
@@ -339,12 +343,15 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
     mpz_inits(r, s, NULL);
 
     do {
+		mpz_t k;
+		mpz_init(k);
+		gmp_randstate_t state;
+		gmp_randinit_default(state);
+		gmp_randseed_ui(state, arc4random());
         // k값 무작위 선택
-        mpz_t k;
-        mpz_init(k);
-        gmp_randstate_t state;
-        gmp_randinit_default(state);
-        mpz_urandomm(k, state, n); // 범위는 (0, n)
+		do {
+        	mpz_urandomm(k, state, n); // 범위는 (0, n)
+		} while (mpz_cmp_ui(k, 0) == 0);
 
         // (x1, y1) = kG
         mpz_t x1, y1;
@@ -362,12 +369,14 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
         mpz_init(tmp);
         // 바이트 배열로 저장된 d를 mpz_t로 변환
         mpz_t d_mpz;
+		mpz_init(d_mpz);
         mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
         // 바이트 배열로 저장된 e를 mpz_t로 변환
         mpz_t e_mpz;
+		mpz_init(e_mpz);
         mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
         // tmp = r * d
-        mpz_mul(tmp, r, d);
+        mpz_mul(tmp, r, d_mpz);
         // tmp = e + r * d
         mpz_add(tmp, e_mpz, tmp);
         // s = k^(-1) * (e + r * d) = k^(-1) * tmp
@@ -376,6 +385,8 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
 
     mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
     mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
+
+
 
     return 0;
 }
