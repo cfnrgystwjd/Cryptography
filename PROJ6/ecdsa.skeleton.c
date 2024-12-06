@@ -22,6 +22,10 @@
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
+ * 
+ * 1차 수정일: 2024.11.30.SAT
+ * 1차 수정 내용: ecdsa_p256_verify() 함수 구현 및 주석 추가
+ * 
  * --------------------3---------------------
  * 학번: 202187083
  * 이름: 이예나
@@ -29,6 +33,12 @@
  * 1차 수정일: 2024.11.24. 일요일
  * 1차 수정 내용: choose_sha2(), get_sha2_digest_size(), ecdsa_point_add(), ecdsa_point_double(), ecdsa_mul(), 
  *               ecdsa_p256_init(), ecdsa_p256__clear(), ecdsa_p256_key() 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.27. 수요일
+ * 2차 수정 내용: ecdsa_mul(), ecdsa_p256_key() 수정
+ * 
+ * 3차 수정일: 2024.12.05. 목요일
+ * 3차 수정 내용: ecdsa_p256_key() 수정
  */
 
 #ifdef __linux__
@@ -259,30 +269,31 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
     gmp_randseed_ui(state, arc4random());
     mpz_urandomm(private_key, state, n);
 
-	// G
-	mpz_t Gx, Gy, Qx, Qy;
-	mpz_inits(Gx, Gy, *Qx, *Qy, NULL);
+    // G의 x, y 좌표를 mpz_t로 변환
+    mpz_t Gx, Gy, Qx, Qy;
+    mpz_inits(Gx, Gy, Qx, Qy, NULL);
 
-	// G mpz_t
-	mpz_import(Gx, sizeof(G.x), 1, 1, 1, 0, G.x);
-	mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y);
-	
-	// Q
-	ecdsa_mul(private_key, G, &Qx, &Qy);
+    mpz_import(Gx, sizeof(G.x), 1, 1, 1, 0, G.x); // G의 x 좌표를 mpz_t로 변환
+    mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y); // G의 y 좌표를 mpz_t로 변환
 
-	//Q
-	memset(Q->x, 0, ECDSA_P256 / 8);
-	memset(Q->y, 0, ECDSA_P256 / 8);
-	mpz_export(Q->x, NULL, 1, ECDSA_P256 / 8, 1, 0, Qx);
-	mpz_export(Q->y, NULL, 1, ECDSA_P256 / 8, 1, 0, Qy);
+    // Q = private_key * G
+    ecdsa_mul(private_key, G, &Qx, &Qy);
 
-	//private
-	mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+    // Q의 결과를 ecdsa_p256_t로 저장
+    memset(Q->x, 0, ECDSA_P256 / 8);
+    memset(Q->y, 0, ECDSA_P256 / 8);
+    mpz_export(Q->x, NULL, 1, ECDSA_P256 / 8, 1, 0, Qx);
+    mpz_export(Q->y, NULL, 1, ECDSA_P256 / 8, 1, 0, Qy);
 
-	// every
-	mpz_clears(private_key, Gx, Gy, Qx, Qy, NULL);
-	gmp_randclear(state);
+    // 개인키 d를 내보내기
+    memset(d, 0, ECDSA_P256 / 8);
+    mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+
+    // 리소스 해제
+    mpz_clears(private_key, Gx, Gy, Qx, Qy, NULL);
+    gmp_randclear(state);
 }
+
 
 /*
  * ecdsa_p256_sign(msg, len, d, r, s) - ECDSA Signature Generation
@@ -377,4 +388,94 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
  */
 int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const void *_r, const void *_s, int sha2_ndx)
 {
+    // 1. r, s 범위 검증 => r과 s는 (1, n-1) 범위 내에 있어야 함 
+    mpz_t r, s;
+    mpz_inits(r, s, NULL);
+    mpz_import(r, ECDSA_P256 / 8, 1, 1, 1, 0, _r);
+    mpz_import(s, ECDSA_P256 / 8, 1, 1, 1, 0, _s);
+
+    if (mpz_cmp_ui(r, 1) < 0 || mpz_cmp(r, n) >= 0 ||  // 1 <= r < n
+        mpz_cmp_ui(s, 1) < 0 || mpz_cmp(s, n) >= 0) {  // 1 <= s < n
+        mpz_clears(r, s, NULL);
+        return ECDSA_SIG_INVALID;
+    }
+
+    // 2. 메시지 Hash 계산 => e = H(msg)
+    const size_t hlen = get_sha2_digest_size(sha2_ndx);
+    unsigned char e[hlen];
+    if(choose_sha2(msg, len, e, sha2_ndx) != 0) {
+        return ECDSA_SIG_INVALID;
+    }
+
+    // 3. Hash 값 e가 n보다 클 경우
+    if (hlen > ECDSA_P256 / 8) {
+        mpz_t e_truncated; // 크기 조정된 e 
+        mpz_init(e_truncated);
+        mpz_import(e_truncated, hlen, 1, 1, 1, 0, e);
+
+        mpz_t mask;
+        mpz_init(mask);
+        mpz_set_ui(mask, 0);
+        mpz_setbit(mask, ECDSA_P256);
+        mpz_sub_ui(mask, mask, 1);
+
+        mpz_and(e_truncated, e_truncated, mask);
+        mpz_export(e, NULL, 1, 1, 1, 0, e_truncated);
+        mpz_clears(mask, e_truncated, NULL);
+    }
+
+    // 4. s 역원인 w 계산 => w = 1/s mod n
+    mpz_t w; // s의 역원
+    mpz_init(w);
+    if (!mpz_invert(w, s, n)) { // s와 n이 서로소가 아닌 경우, 오류 반환
+        mpz_clears(r, s, w, NULL);
+        return ECDSA_SIG_INVALID; 
+    }
+
+    // 5. u1, u2 계산 => u1 = e * w mod n, u2 = r * w mod n
+    mpz_t u1, u2, e_mpz;
+    mpz_inits(u1, u2, e_mpz, NULL);
+    mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
+    mpz_mul(u1, e_mpz, w);
+    mpz_mod(u1, u1, n);
+    mpz_mul(u2, r, w);
+    mpz_mod(u2, u2, n);
+
+    // 6. 점(x1, y1) 계산 => (x1, y1) = u1 * G + u2 * Q
+    mpz_t qx, qy, x1, y1; // 공개키 Q의 x, y & 최종 계산 결과 x1, y1
+    mpz_inits(qx, qy, x1, y1, NULL);
+    
+    // 공개키 Q의 x, y 좌표를 mpz_t로 변환 
+    mpz_import(qx, sizeof(_Q->x), 1, 1, 1, 0, _Q->x);
+    mpz_import(qy, sizeof(_Q->y), 1, 1, 1, 0, _Q->y);
+
+    // u1 * G 
+    mpz_t u1G_x, u1G_y;
+    mpz_inits(u1G_x, u1G_y, NULL);
+    ecdsa_mul(u1, G, &u1G_x, &u1G_y);
+
+    // u2 * Q
+    mpz_t u2Q_x, u2Q_y;
+    mpz_inits(u2Q_x, u2Q_y, NULL);
+    ecdsa_mul(u2, *_Q, &u2Q_x, &u2Q_y);
+
+    // u1 * G + u2 * Q
+    ecdsa_point_add(&x1, &y1, &u1G_x, &u1G_y, &u2Q_x, &u2Q_y, p);
+
+    // 7. 점이 무한점인지 확인
+    if (mpz_cmp_ui(x1, 0) == 0 && mpz_cmp_ui(y1, 0) == 0) {
+        mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, NULL);
+        return ECDSA_SIG_INVALID;
+    }
+
+    // 7. x1 mod n = r 검증
+    mpz_mod(x1, x1, n);
+    if (mpz_cmp(x1, r) != 0) {
+        mpz_clears(r, s, w, u1, u2, e_mpz, x1, y1, NULL);
+        return ECDSA_SIG_MISMATCH;
+    }
+
+    mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, e_mpz, NULL);
+
+    return 0;
 }
