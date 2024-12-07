@@ -10,6 +10,18 @@
  * --------------------1---------------------
  * 학번: 2019060637
  * 이름: 추효정
+ * 
+ * 1차 수정일: 2024.11.26.화요일
+ * 1차 수정 내용: ecdsa_p256_sign() 함수 구현 및 주석 삽입, 테스트 시 발생한 컴파일 오류 팀원 보고
+ *
+ * 2차 수정일: 2024.11.28.목요일
+ * 2차 수정 내용: Segmentation fault 발생지 탐색 및 오류 해결을 위한 코드 수정
+ *
+ * 3차 수정일: 2024.12.01.일요일
+ * 3차 수정 내용: ecdsa_p256_sign() 함수에서 발생한 ECDSA_MSG_TOO_LONG(오류 코드 1) 에러 해결
+ * 
+ * 4차 수정일: 2024.12.06.금요일
+ * 4차 수정 내용: ecdsa_p256_sign() 함수에서 발생한 Segmentation fault, MP: Cannot allocate memory, k may not be random 에러 해결
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -24,6 +36,12 @@
  * 1차 수정일: 2024.11.24. 일요일
  * 1차 수정 내용: choose_sha2(), get_sha2_digest_size(), ecdsa_point_add(), ecdsa_point_double(), ecdsa_mul(), 
  *               ecdsa_p256_init(), ecdsa_p256__clear(), ecdsa_p256_key() 구현 및 주석 삽입
+ * 
+ * 2차 수정일: 2024.11.27. 수요일
+ * 2차 수정 내용: ecdsa_mul(), ecdsa_p256_key() 수정
+ * 
+ * 3차 수정일: 2024.12.05. 목요일
+ * 3차 수정 내용: ecdsa_p256_key() 수정
  */
 
 #ifdef __linux__
@@ -38,6 +56,7 @@
 #include <gmp.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 mpz_t p, n; // 타원곡선의 소수 p와 차수 n
 ecdsa_p256_t G; // 기저점 G
@@ -112,22 +131,32 @@ void ecdsa_point_add(mpz_t *Rx, mpz_t *Ry, const mpz_t *Px, const mpz_t *Py, con
 
     // Lambda = (Qy - Py) / (Qx - Px) mod p
     mpz_sub(temp, *Qy, *Py); // temp = Qy - Py
+// printf("Qy - Py: ");
+// mpz_out_str(stdout, 10, temp); // 출력
     mpz_sub(lambda, *Qx, *Px); // Lambda = Qx - Px
+// printf("Qx - Px: ");
+// mpz_out_str(stdout, 10, lambda); // 출력
     mpz_invert(lambda, lambda, p); // Lambda = (Qx - Px)^(-1) mod p
     mpz_mul(lambda, lambda, temp); // Lamda *= (Qy - Py)
     mpz_mod(lambda, lambda, p); // Lambda = Lambda mod p
+// printf("Lambda: ");
+// mpz_out_str(stdout, 10, lambda); // 출력
 
     // Rx = Lambda^2 - Px - Qx mod p
     mpz_powm_ui(temp, lambda, 2, p); // temp = Lambda^2
     mpz_sub(temp, temp, *Px); // temp -= Px
     mpz_sub(temp, temp, *Qx); // temp -= Qx
     mpz_mod(*Rx, temp, p); // Rx = temp mod p
+// printf("Rx: ");
+// mpz_out_str(stdout, 10, *Rx); // 출력
 
     // Ry = Lambda * (Px - Rx) - Py mod p
     mpz_sub(temp, *Px, *Rx); // temp = Px - Rx
     mpz_mul(temp, lambda, temp); //temp *= Lambda
     mpz_sub(temp, temp, *Py); // temp -= Py
     mpz_mod(*Ry, temp, p); // Ry = temp mod p
+// printf("Ry: ");
+// mpz_out_str(stdout, 10, *Ry); // 출력
 
     mpz_clears(lambda, temp, NULL);
 }
@@ -187,9 +216,17 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
 
     bool first = true;
 
+// printf("Starting scalar multiplication\n");
+
     for(int i = mpz_sizeinbase(k, 2)-1; i>=0; i--){ // k의 각 비트 처리
+        // printf("Bit position: %d\n", i); // 출력
         if(!first){
+            // printf("Doubling point (Qx, Qy)\n"); // 출력
             ecdsa_point_double(Qx, Qy, Qx, Qy, a, p); // 점 두 배
+            // printf("After doubling Qx: ");
+            // mpz_out_str(stdout, 10, *Qx); // 출력
+            // printf("After doubling Qy: ");
+            // mpz_out_str(stdout, 10, *Qy); // 출력
         }
 
         if(mpz_tstbit(k, i)){ // 현재 비트가 1이면 점 덧셈 수행
@@ -198,7 +235,12 @@ void ecdsa_mul(const mpz_t k, const ecdsa_p256_t G, mpz_t *Qx, mpz_t *Qy){
                 mpz_set(*Qy, Py);
                 first = false;
             }else{
+                // printf("Adding point (Px, Py) to (Qx, Qy)\n");
                 ecdsa_point_add(Qx, Qy, Qx, Qy, &Px, &Py, p);
+                // printf("After adding Qx: ");
+                // mpz_out_str(stdout, 10, *Qx); // 출력
+                // printf("After adding Qy: ");
+                // mpz_out_str(stdout, 10, *Qy); // 출력
             }
         }
     }
@@ -254,30 +296,31 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
     gmp_randseed_ui(state, arc4random());
     mpz_urandomm(private_key, state, n);
 
-	// G
-	mpz_t Gx, Gy, Qx, Qy;
-	mpz_inits(Gx, Gy, *Qx, *Qy, NULL);
+    // G의 x, y 좌표를 mpz_t로 변환
+    mpz_t Gx, Gy, Qx, Qy;
+    mpz_inits(Gx, Gy, Qx, Qy, NULL);
 
-	// G mpz_t
-	mpz_import(Gx, sizeof(G.x), 1, 1, 1, 0, G.x);
-	mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y);
-	
-	// Q
-	ecdsa_mul(private_key, G, &Qx, &Qy);
+    mpz_import(Gx, sizeof(G.x), 1, 1, 1, 0, G.x); // G의 x 좌표를 mpz_t로 변환
+    mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y); // G의 y 좌표를 mpz_t로 변환
 
-	//Q
-	memset(Q->x, 0, ECDSA_P256 / 8);
-	memset(Q->y, 0, ECDSA_P256 / 8);
-	mpz_export(Q->x, NULL, 1, ECDSA_P256 / 8, 1, 0, Qx);
-	mpz_export(Q->y, NULL, 1, ECDSA_P256 / 8, 1, 0, Qy);
+    // Q = private_key * G
+    ecdsa_mul(private_key, G, &Qx, &Qy);
 
-	//private
-	mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+    // Q의 결과를 ecdsa_p256_t로 저장
+    memset(Q->x, 0, ECDSA_P256 / 8);
+    memset(Q->y, 0, ECDSA_P256 / 8);
+    mpz_export(Q->x, NULL, 1, ECDSA_P256 / 8, 1, 0, Qx);
+    mpz_export(Q->y, NULL, 1, ECDSA_P256 / 8, 1, 0, Qy);
 
-	// every
-	mpz_clears(private_key, Gx, Gy, Qx, Qy, NULL);
-	gmp_randclear(state);
+    // 개인키 d를 내보내기
+    memset(d, 0, ECDSA_P256 / 8);
+    mpz_export(d, NULL, 1, ECDSA_P256 / 8, 1, 0, private_key);
+
+    // 리소스 해제
+    mpz_clears(private_key, Gx, Gy, Qx, Qy, NULL);
+    gmp_randclear(state);
 }
+
 
 /*
  * ecdsa_p256_sign(msg, len, d, r, s) - ECDSA Signature Generation
@@ -288,13 +331,20 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
-    if (len > ECDSA_P256 / 8) return ECDSA_MSG_TOO_LONG;
+	const size_t MAX_MSG_LEN = (1ULL << 64) - 1;
+    if (len > MAX_MSG_LEN) return ECDSA_MSG_TOO_LONG;
 
     // 사용하는 hash함수의 길이 저장
     const size_t hlen = get_sha2_digest_size(sha2_ndx);
     // e = H(m)
     unsigned char e[hlen];
     choose_sha2(msg, len, e, sha2_ndx);
+
+printf("Hash of message (e): ");
+for (size_t i = 0; i < hlen; i++) {
+    printf("%02x", e[i]);
+}
+printf("\n");
 
     // e의 길이가 n의 길이(256비트)보다 클 경우
     if (hlen > ECDSA_P256 / 8) {
@@ -322,12 +372,19 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
     mpz_inits(r, s, NULL);
 
     do {
+		mpz_t k;
+		mpz_init(k);
+		gmp_randstate_t state;
+		gmp_randinit_default(state);
+		gmp_randseed_ui(state, arc4random());
         // k값 무작위 선택
-        mpz_t k;
-        mpz_init(k);
-        gmp_randstate_t state;
-        gmp_randinit_default(state);
-        mpz_urandomm(k, state, n); // 범위는 (0, n)
+		do {
+        	mpz_urandomm(k, state, n); // 범위는 (0, n)
+		} while (mpz_cmp_ui(k, 0) == 0);
+
+printf("Random k: ");
+mpz_out_str(stdout, 10, k);
+printf("\n");
 
         // (x1, y1) = kG
         mpz_t x1, y1;
@@ -336,6 +393,9 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
 
         // r = x1 mod n
         mpz_mod(r, x1, n);
+printf("Signature r: ");
+mpz_out_str(stdout, 10, r);
+printf("\n");
 
         mpz_t k_inverse;
         mpz_init(k_inverse);
@@ -345,20 +405,29 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
         mpz_init(tmp);
         // 바이트 배열로 저장된 d를 mpz_t로 변환
         mpz_t d_mpz;
+		mpz_init(d_mpz);
         mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
         // 바이트 배열로 저장된 e를 mpz_t로 변환
         mpz_t e_mpz;
+		mpz_init(e_mpz);
         mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
         // tmp = r * d
-        mpz_mul(tmp, r, d);
+        mpz_mul(tmp, r, d_mpz);
         // tmp = e + r * d
         mpz_add(tmp, e_mpz, tmp);
         // s = k^(-1) * (e + r * d) = k^(-1) * tmp
         mpz_mul(s, k_inverse, tmp);
+
+printf("Signature s: ");
+mpz_out_str(stdout, 10, s);
+printf("\n");
+
     } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
 
     mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
     mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
+
+    mpz_clears(r, s, NULL);
 
     return 0;
 }
@@ -371,7 +440,20 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
  */
 int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const void *_r, const void *_s, int sha2_ndx)
 {
-    // 1. r, s 범위 검증 => r과 s는 (1, n-1) 범위 내에 있어야 함 
+    // 1. 메시지 Hash 계산 => e = H(msg)
+    const size_t hlen = get_sha2_digest_size(sha2_ndx);
+    unsigned char e[hlen];
+    if(choose_sha2(msg, len, e, sha2_ndx) != 0) {
+        return ECDSA_SIG_INVALID;
+    }
+
+printf("Hash of message (e): ");
+for (size_t i = 0; i < hlen; i++) {
+    printf("%02x", e[i]);
+}
+printf("\n");
+
+    // 2. r, s 범위 검증 => r과 s는 (1, n-1) 범위 내에 있어야 함 
     mpz_t r, s;
     mpz_inits(r, s, NULL);
     mpz_import(r, ECDSA_P256 / 8, 1, 1, 1, 0, _r);
@@ -383,12 +465,9 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
         return ECDSA_SIG_INVALID;
     }
 
-    // 2. 메시지 Hash 계산 => e = H(msg)
-    const size_t hlen = get_sha2_digest_size(sha2_ndx);
-    unsigned char e[hlen];
-    if(choose_sha2(msg, len, e, sha2_ndx) != 0) {
-        return ECDSA_SIG_INVALID;
-    }
+printf("r = "); mpz_out_str(stdout, 10, r); printf("\n");
+printf("s = "); mpz_out_str(stdout, 10, s); printf("\n");
+printf("n = "); mpz_out_str(stdout, 10, n); printf("\n");
 
     // 3. Hash 값 e가 n보다 클 경우
     if (hlen > ECDSA_P256 / 8) {
@@ -415,10 +494,12 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
         return ECDSA_SIG_INVALID; 
     }
 
+printf("w = "); mpz_out_str(stdout, 10, w); printf("\n");
+
     // 5. u1, u2 계산 => u1 = e * w mod n, u2 = r * w mod n
     mpz_t u1, u2, e_mpz;
     mpz_inits(u1, u2, e_mpz, NULL);
-    mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
+    mpz_import(e_mpz, hlen, 1, 1, 1, 0, e); // e 배열을 mpz_t 타입(e_mpz)로 변환
     mpz_mul(u1, e_mpz, w);
     mpz_mod(u1, u1, n);
     mpz_mul(u2, r, w);
@@ -445,18 +526,34 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     // u1 * G + u2 * Q
     ecdsa_point_add(&x1, &y1, &u1G_x, &u1G_y, &u2Q_x, &u2Q_y, p);
 
+printf("u1 * G: (x, y) = ");
+mpz_out_str(stdout, 10, u1G_x); printf(", ");
+mpz_out_str(stdout, 10, u1G_y); printf("\n");
+printf("u2 * Q: (x, y) = ");
+mpz_out_str(stdout, 10, u2Q_x); printf(", ");
+mpz_out_str(stdout, 10, u2Q_y); printf("\n");
+printf("Result: (x1, y1) = ");
+mpz_out_str(stdout, 10, x1); printf(", ");
+mpz_out_str(stdout, 10, y1); printf("\n");
+
     // 7. 점이 무한점인지 확인
     if (mpz_cmp_ui(x1, 0) == 0 && mpz_cmp_ui(y1, 0) == 0) {
         mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, NULL);
         return ECDSA_SIG_INVALID;
     }
 
-    // 7. x1 mod n = r 검증
+    printf("Point check: x1 = "); mpz_out_str(stdout, 10, x1); printf(", y1 = "); mpz_out_str(stdout, 10, y1); printf("\n");
+
+    // 8. x1 mod n = r 검증
     mpz_mod(x1, x1, n);
+    printf("x1 mod n = "); mpz_out_str(stdout, 10, x1); printf("\n");
+    printf("r = "); mpz_out_str(stdout, 10, r); printf("\n");
+
     if (mpz_cmp(x1, r) != 0) {
         mpz_clears(r, s, w, u1, u2, e_mpz, x1, y1, NULL);
         return ECDSA_SIG_MISMATCH;
     }
+
 
     mpz_clears(e, r, s, w, u1, u2, qx, qy, x1, y1, u1G_x, u1G_y, u2Q_x, u2Q_y, e_mpz, NULL);
 
