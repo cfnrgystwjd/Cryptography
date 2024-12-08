@@ -261,7 +261,7 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
     mpz_import(Gy, sizeof(G.y), 1, 1, 1, 0, G.y); // G의 y 좌표를 mpz_t로 변환
 
     // Q = private_key * G
-    ecdsa_mul(private_key, G, &Qx, &Qy);
+    ecdsa_mul(private_key, &G, &Q);
 
     // Q의 결과를 ecdsa_p256_t로 저장
     memset(Q->x, 0, ECDSA_P256 / 8);
@@ -435,8 +435,8 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     // u1G, u2Q를 0으로 초기화 
     memset(u1G.x, 0, ECDSA_P256 / 8);
     memset(u1G.y, 0, ECDSA_P256 / 8);
-    memset(u1Q.x, 0, ECDSA_P256 / 8);
-    memset(u1Q.y, 0, ECDSA_P256 / 8);
+    memset(u2Q.x, 0, ECDSA_P256 / 8);
+    memset(u2Q.y, 0, ECDSA_P256 / 8);
 
     ecdsa_mul(&tempG, u1, &u1G);
     ecdsa_mul(&tempQ, u2, &u2Q);
