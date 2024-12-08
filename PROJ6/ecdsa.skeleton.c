@@ -288,60 +288,85 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
-    if (len > ECDSA_P256 / 8) return ECDSA_MSG_TOO_LONG;
+	const size_t MAX_MSG_LEN = (1ULL << 64) - 1;
+    if (len > MAX_MSG_LEN) return ECDSA_MSG_TOO_LONG;
 
     // 사용하는 hash함수의 길이 저장
-    size_t hlen = get_sha2_digest_size(sha2_ndx);
+    const size_t hlen = get_sha2_digest_size(sha2_ndx);
     // e = H(m)
     unsigned char e[hlen];
     choose_sha2(msg, len, e, sha2_ndx);
 
-    mpz_t ee, dd, k, r, s;
-    mpz_inits(ee, dd, k, r, s, NULL);
-
-    ecdsa_p256_t sign;
-    gmp_randstate_t state;
-
     // e의 길이가 n의 길이(256비트)보다 클 경우
     if (hlen > ECDSA_P256 / 8) {
-        hlen = SHA256_DIGEST_SIZE;
+        // 바이트 배열로 선언된 e를 mpz_t 타입으로 변환
+        mpz_t e_truncated;
+        mpz_init(e_truncated);
+        mpz_import(e_truncated, hlen, 1, 1, 1, 0, e);
+
+        // e_truncated를 자르기 위해서 mask 생성
+        mpz_t mask;
+        mpz_init(mask);
+        mpz_set_ui(mask, 0);
+        mpz_setbit(mask, ECDSA_P256);
+        mpz_sub_ui(mask, mask, 1);
+
+        mpz_and(e_truncated, e_truncated, mask);
+        mpz_clear(mask);
+
+        size_t e_len = 0;
+        mpz_export(e, &e_len, 1, 1, 1, 0, e_truncated);
+        mpz_clear(e_truncated);
     }
 
-    mpz_import(ee, hlen, 1, 1, 1, 0, d);
-    mpz_import(dd, ECDSA_P256/8, 1, 1, 1, 0, d);
-
-    ecdsa_p256_t temp;
-    gmp_randinit_default(state);
-    gmp_randseed_ui(state, arc4random());
+    mpz_t r, s;
+    mpz_inits(r, s, NULL);
 
     do {
+		mpz_t k;
+		mpz_init(k);
+		gmp_randstate_t state;
+		gmp_randinit_default(state);
+		gmp_randseed_ui(state, arc4random());
         // k값 무작위 선택
-        mpz_t k;
-        mpz_urandomm(k, state, n);
+		do {
+        	mpz_urandomm(k, state, n); // 범위는 (0, n)
+		} while (mpz_cmp_ui(k, 0) == 0);
 
         // (x1, y1) = kG
-        memset(sign.x, 0, ECDSA_P256/8);
-        memset(sign.y, 0, ECDSA_P256/8);
-        memcpy(&temp.x, &G.x, ECDSA_P256/8);
-        memcpy(&temp.y, &G.y, ECDSA_P256/8);
-
-        ecdsa_mul(&temp, k, &sign);
+        mpz_t x1, y1;
+        mpz_inits(x1, y1, NULL);
+        ecdsa_mul(k, G, &x1, &y1);
 
         // r = x1 mod n
-        mpz_import(r, ECDSA_P256/8, 1, 1, 1, 0, sign.x);
-        mpz_mod(r, r, n);
+        mpz_mod(r, x1, n);
 
-        mpz_invert(k, k, n);
-        mpz_mul(dd, r, dd);
-        mpz(dd, ee, dd);
-        mpz_mul(s, k, dd);
-        mpz_mod(s, s, n);
+        mpz_t k_inverse;
+        mpz_init(k_inverse);
+        mpz_invert(k_inverse, k, n);
+
+        mpz_t tmp;
+        mpz_init(tmp);
+        // 바이트 배열로 저장된 d를 mpz_t로 변환
+        mpz_t d_mpz;
+		mpz_init(d_mpz);
+        mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
+        // 바이트 배열로 저장된 e를 mpz_t로 변환
+        mpz_t e_mpz;
+		mpz_init(e_mpz);
+        mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);
+        // tmp = r * d
+        mpz_mul(tmp, r, d_mpz);
+        // tmp = e + r * d
+        mpz_add(tmp, e_mpz, tmp);
+        // s = k^(-1) * (e + r * d) = k^(-1) * tmp
+        mpz_mul(s, k_inverse, tmp);
     } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
 
     mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
     mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
 
-    mpz_clears(ee, dd, k, r, s, NULL);
+
 
     return 0;
 }
