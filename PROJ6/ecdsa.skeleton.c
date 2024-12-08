@@ -72,7 +72,6 @@ void choose_sha2(const unsigned char *message, unsigned int len, unsigned char *
         case SHA512_256:
             sha512_256(message, len, digest);
             break;
-        default:
     }
 }
 
@@ -334,12 +333,12 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
 		} while (mpz_cmp_ui(k, 0) == 0);
 
         // (x1, y1) = kG
-        mpz_t x1, y1;
-        mpz_inits(x1, y1, NULL);
-        ecdsa_mul(k, G, &x1, &y1);
+        ecdsa_p256_t kG;
+        ecdsa_mul(G.x, k, kG.x);
+		ecdsa_mul(G.y, k, kG.y);
 
         // r = x1 mod n
-        mpz_mod(r, x1, n);
+        mpz_mod(r, kG.x, n);
 
         mpz_t k_inverse;
         mpz_init(k_inverse);
@@ -361,12 +360,13 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
         mpz_add(tmp, e_mpz, tmp);
         // s = k^(-1) * (e + r * d) = k^(-1) * tmp
         mpz_mul(s, k_inverse, tmp);
+		mpz_clears(k, k_inverse, tmp, e_mpz, d_mpz);
     } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
 
     mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
     mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
 
-
+	mpz_clears(r, s, NULL);
 
     return 0;
 }
@@ -401,9 +401,7 @@ int ecdsa_p256_verify(const void *msg, size_t len, const ecdsa_p256_t *_Q, const
     // 2. 메시지 Hash 계산 => e = H(msg)
     size_t hlen = get_sha2_digest_size(sha2_ndx);
     unsigned char e[hlen];
-    if(choose_sha2(msg, len, e, sha2_ndx) != 0) {
-        return ECDSA_SIG_INVALID;
-    }
+    choose_sha2(msg, len, e, sha2_ndx);
 
 // printf("Hash of message (e): ");
 // for (size_t i = 0; i < hlen; i++) {
