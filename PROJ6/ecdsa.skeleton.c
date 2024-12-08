@@ -381,12 +381,14 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
         mpz_add(tmp, e_mpz, tmp);
         // s = k^(-1) * (e + r * d) = k^(-1) * tmp
         mpz_mul(s, k_inverse, tmp);
+
+		mpz_clears(k, x1, y1, k_inverse, tmp, d_mpz, e_mpz, NULL);
     } while(mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
 
     mpz_export(_r, NULL, 1, ECDSA_P256 / 8, 1, 0, r);
     mpz_export(_s, NULL, 1, ECDSA_P256 / 8, 1, 0, s);
 
-
+	mpz_clears(r, s, NULL);
 
     return 0;
 }
