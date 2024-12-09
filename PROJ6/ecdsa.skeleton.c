@@ -22,7 +22,12 @@
  * 
  * 4차 수정일: 2024.12.06.금요일
  * 4차 수정 내용: ecdsa_p256_sign() 함수에서 발생한 Segmentation fault, MP: Cannot allocate memory, k may not be random 에러 해결
+ *
+ * 5차 수정일: 2024.12.08.일요일
+ * 5차 수정 내용: ecdsa_p256_verify() 함수에서 발생한 Error code 3(ECDSA_SIG_MISMATCH) 에러 원인 탐색
  * 
+ * 6차 수정일: 2024.12.09.월요일
+ * 6차 수정 내용: ecdsa_p256_sign() 함수 주석 추가 및 구조 수정
  * --------------------2---------------------
  * 학번: 2021043209
  * 이름: 노은솔
@@ -315,11 +320,7 @@ void ecdsa_p256_key(void *d, ecdsa_p256_t *Q)
  */
 int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *_s, int sha2_ndx)
 {
-    // 변수 선언
-    mpz_t e_mpz, d_mpz, k, r, s;
-    ecdsa_p256_t sign;
-    gmp_randstate_t state;
-
+	// msg 길이 검증
     const size_t MAX_MSG_LEN = (1ULL << 64) - 1;
     if (len > MAX_MSG_LEN) return ECDSA_MSG_TOO_LONG;
 
@@ -329,16 +330,27 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
     choose_sha2(msg, len, e, sha2_ndx);
     
     // 2. e의 길이가 n의 길이(256비트)보다 길면 뒷 부분은 자른다. bitlen(e) ≤ bitlen(n) 
-    if (sha2_ndx == SHA384 || sha2_ndx == SHA512) hlen = SHA256_DIGEST_SIZE;  // 256bit
+    if (sha2_ndx == SHA384 || sha2_ndx == SHA512) hlen = SHA256_DIGEST_SIZE;  // 최대 256bit로 제한
     else hlen = get_sha2_digest_size(sha2_ndx); // 기존 비트 수 유지
-    mpz_inits(e_mpz, d_mpz, k, r, s, NULL);
+	
+	// 서명 생성에 사용할 변수 선언
+	mpz_t e_mpz, d_mpz, k, r, s;
+	mpz_inits(e_mpz, d_mpz, k, r, s, NULL);
+	// 난수 k를 생성할 때 사용할 state 변수 선언
+	gmp_randstate_t state;
+	gmp_randinit_default(state);
+	gmp_randseed_ui(state, arc4random()); // 사용할 random state 지정
+	// (x1, y1) = (sign.x, sign.y)
+	// 연산 후 ecdsa_p256_t sign 객체의 x, y 속성에 x1, y1을 저장하기 위해 선언.
+	ecdsa_p256_t sign;
+
+	// 바이트 배열인 e를  mpz_t로 변환하여 e_mpz에 저장
     mpz_import(e_mpz, hlen, 1, 1, 1, 0, e);  // 해시 길이만큼 e를 잘라서 저장
+	// 바이트 배열인 d를 mpz_t로 변환하여 d_mpz에 저장
     mpz_import(d_mpz, ECDSA_P256 / 8, 1, 1, 1, 0, d);
     
     // G값을 저장하고 계산에 이용할 임시 변수
     ecdsa_p256_t tempG;  
-    gmp_randinit_default(state);
-    gmp_randseed_ui(state, arc4random());
 
     do
     {
@@ -352,19 +364,21 @@ int ecdsa_p256_sign(const void *msg, size_t len, const void *d, void *_r, void *
         memset(sign.y, 0, ECDSA_P256 / 8);          // y1 초기화
         memcpy(&tempG.x, &G.x, ECDSA_P256 / 8);     // G의 x값 복사
         memcpy(&tempG.y, &G.y, ECDSA_P256 / 8);     // G의 y값 복사
-
-        ecdsa_mul(&tempG, k, &sign);   // (x1, y1 생성)
+		
+		// x1 = sign.x = k * G.x
+		// y1 = sign.y = k * G.y
+        ecdsa_mul(&tempG, k, &sign);
 
         // 5. r = x1 mod n 생성
         mpz_import(r, ECDSA_P256 / 8, 1, 1, 1, 0, sign.x); // x1 == sign.x
         mpz_mod(r, r, n);
 
-        // 6. s = k^-1 * (e + r * d) mod n 
-        mpz_invert(k, k, n);            // k = k^-1
-        mpz_mul(d_mpz, r, d_mpz);       // d_mpz = rd
-        mpz_add(d_mpz, e_mpz, d_mpz);   // d_mpz = e + rd
-        mpz_mul(s, k, d_mpz);           // s = k^-1 * (e + rd)
-        mpz_mod(s, s, n);               // s = k^-1 * (e + rd) mod n
+        // 6. s = k^(-1) * (e + r * d) mod n 
+        mpz_invert(k, k, n);            // k = k^(-1)
+        mpz_mul(d_mpz, r, d_mpz);       // d_mpz = r * d
+        mpz_add(d_mpz, e_mpz, d_mpz);   // d_mpz = e + (r * d)
+        mpz_mul(s, k, d_mpz);           // s = k^(-1) * (e + r * d)
+        mpz_mod(s, s, n);               // s = k^(-1) * (e + r * d) mod n
 
     } while (mpz_cmp_ui(r, 0) == 0 || mpz_cmp_ui(s, 0) == 0);
 
